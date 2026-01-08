@@ -23,7 +23,7 @@
 **Solution**:
 ```bash
 # Manual deployment via Vercel CLI
-cd /Users/tylermailman/Documents/GitHub/PlexMCP/web
+cd ./web
 npx vercel --prod --yes
 
 # Verify deployment
@@ -308,7 +308,7 @@ PGPASSWORD="YOUR_DATABASE_PASSWORD" psql -h db.yjstfwfdmybeaadauell.supabase.co 
 
 ```bash
 # Frontend
-cd /Users/tylermailman/Documents/GitHub/PlexMCP/web
+cd ./web
 npx vercel --prod --yes
 
 # Backend

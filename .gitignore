@@ -5,6 +5,7 @@
 .env.*.local
 .env.local
 .env*
+!.env.example
 .idea/
 .LSOverride
 .vscode/
@@ -46,14 +47,11 @@ web/coverage/
 web/node_modules/
 web/out/
 
-# Embeddings (regenerate with: cd .embeddings && npm run index)
-.embeddings/data/
-.embeddings/dist/
-.embeddings/node_modules/
-.embeddings/*.faiss
-.embeddings/*.db
-.embeddings/*.vectors.json
-.embeddings/npm-debug.log*
+# Embeddings - entire directory (development artifact, not for OSS)
+.embeddings/
+
+# Debug logs
+debug_logs/
 
 # CodeRabbit review artifacts (auto-generated, not for version control)
 .coderabbit/reviews/

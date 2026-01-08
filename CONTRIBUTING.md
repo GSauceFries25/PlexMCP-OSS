@@ -27,8 +27,8 @@ Get up and running quickly with these commands:
 
 ```bash
 # Clone and enter the repository
-git clone https://github.com/PlexMCP/plexmcp.git
-cd plexmcp
+git clone https://github.com/PlexMCP/PlexMCP-OSS.git
+cd PlexMCP-OSS
 
 # Copy environment template and generate secrets
 cp .env.example .env
@@ -87,7 +87,7 @@ Before you begin, ensure you have the following installed:
    ```
 3. **Add upstream remote:**
    ```bash
-   git remote add upstream https://github.com/plexmcp/plexmcp.git
+   git remote add upstream https://github.com/PlexMCP/PlexMCP-OSS.git
    ```
 
 ### Local Setup
@@ -505,8 +505,8 @@ Good documentation is crucial for PlexMCP's success.
 ### Getting Help
 
 - **Discord:** [Join our community](https://discord.gg/HAYYTGnht8)
-- **GitHub Discussions:** [Ask questions](https://github.com/plexmcp/plexmcp/discussions)
-- **GitHub Issues:** [Report bugs](https://github.com/plexmcp/plexmcp/issues)
+- **GitHub Discussions:** [Ask questions](https://github.com/PlexMCP/PlexMCP-OSS/discussions)
+- **GitHub Issues:** [Report bugs](https://github.com/PlexMCP/PlexMCP-OSS/issues)
 
 ### Communication Channels
 
@@ -560,7 +560,7 @@ By contributing to PlexMCP, you agree that your contributions will be licensed u
 
 If you have questions about contributing, please:
 - Join our [Discord](https://discord.gg/HAYYTGnht8)
-- Open a [GitHub Discussion](https://github.com/plexmcp/plexmcp/discussions)
+- Open a [GitHub Discussion](https://github.com/PlexMCP/PlexMCP-OSS/discussions)
 - Email us at hello@plexmcp.com
 
 Thank you for contributing to PlexMCP!

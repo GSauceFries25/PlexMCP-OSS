@@ -441,13 +441,6 @@ files.forEach(file => {
 });
 ```
 
-## Related Documentation
-
-- [Code Quality Guide](../docs/CODE_QUALITY.md) - Complete workflow documentation
-- [Testing Guide](../TESTING_CODERABBIT.md) - Integration testing
-- [GitHub Secrets](../docs/GITHUB_SECRETS.md) - CI/CD configuration
-- [Memory Bank Overview](../.embeddings/README.md) - Embeddings system
-
 ---
 
 **Last Updated:** 2025-12-29

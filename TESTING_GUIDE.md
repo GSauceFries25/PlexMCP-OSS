@@ -43,7 +43,7 @@ This guide covers comprehensive testing for the real-time support ticket system 
 
 **Run Unit Tests**:
 ```bash
-cd /Users/tylermailman/Documents/GitHub/PlexMCP
+cd /path/to/plexmcp
 cargo test --lib websocket
 ```
 
@@ -78,7 +78,7 @@ cargo test --lib websocket
 **Setup**:
 ```bash
 # Start backend
-cd /Users/tylermailman/Documents/GitHub/PlexMCP
+cd /path/to/plexmcp
 cargo run --bin plexmcp-api
 ```
 
