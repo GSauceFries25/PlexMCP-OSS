@@ -1,0 +1,65 @@
+
+.AppleDouble
+.DS_Store
+.env
+.env.*.local
+.env.local
+.env*
+.idea/
+.LSOverride
+.vscode/
+*.db
+*.key
+*.log
+*.pem
+*.profdata
+*.profraw
+*.sqlite
+*.swo
+*.swp
+*.tmp
+*~
+/target/
+# Build artifacts
+# Database
+# Docker
+# Environment
+# IDE
+# macOS
+# Node.js (web frontend)
+# Rust
+# Secrets (never commit these)
+# Script files that may contain secrets
+web/add-env-vars.sh
+web/create-stripe-products.mjs
+web/test-*.mjs
+scripts/create-stripe-products.mjs
+
+# Vercel env files
+web/.env.vercel*
+# Test artifacts
+Cargo.lock
+docker-compose.override.yml
+secrets/
+web/.next/
+web/.turbo/
+web/coverage/
+web/node_modules/
+web/out/
+
+# Embeddings (regenerate with: cd .embeddings && npm run index)
+.embeddings/data/
+.embeddings/dist/
+.embeddings/node_modules/
+.embeddings/*.faiss
+.embeddings/*.db
+.embeddings/*.vectors.json
+.embeddings/npm-debug.log*
+
+# CodeRabbit review artifacts (auto-generated, not for version control)
+.coderabbit/reviews/
+.coderabbit/*.txt
+
+# MaxMind GeoIP databases (large binary files, auto-downloaded)
+data/*.mmdb
+.env.live

@@ -1,0 +1,97 @@
+# Functional Source License, Version 1.1, Apache 2.0 Future License
+
+## Abbreviation
+
+FSL-1.1-Apache-2.0
+
+## Notice
+
+Copyright 2026 PlexMCP, Inc.
+
+## Terms and Conditions
+
+### Licensor ("We")
+
+PlexMCP, Inc.
+
+### The Software
+
+PlexMCP - The unified gateway for Model Context Protocol servers.
+
+### Grant of Rights
+
+Subject to the terms of this License, we grant you a non-exclusive, worldwide, royalty-free copyright license to use, copy, modify, and distribute the Software and its modifications solely for the Permitted Purposes. You may not use the Software for any purpose other than the Permitted Purposes.
+
+### Permitted Purposes
+
+A Permitted Purpose is any purpose other than a Competing Use.
+
+### Competing Use
+
+A "Competing Use" means any of the following:
+
+1. **Competing Service**: Using the Software to provide a managed MCP gateway service that is substantially similar to our commercial offering, where users can connect to and manage MCP servers through your hosted infrastructure.
+
+2. **Commercial Use by Large Organizations**: Commercial use of the Software by any organization with annual revenue exceeding One Million United States Dollars ($1,000,000 USD) in the preceding fiscal year, unless such organization has obtained a commercial license from us.
+
+For clarity, the following are NOT Competing Uses:
+- Self-hosting the Software for your own organization's internal use, regardless of revenue
+- Using the Software for non-commercial purposes (education, research, personal projects)
+- Contributing to the Software's development
+- Building applications that integrate with the Software
+
+### Commercial Licenses
+
+Organizations with revenue exceeding $1,000,000 USD that wish to use the Software commercially may obtain a commercial license by contacting sales@plexmcp.com.
+
+### Change Date
+
+January 6, 2031 (Five years from initial release)
+
+### Change License
+
+Apache License, Version 2.0
+
+### License Change
+
+On the Change Date, this License will automatically convert to the Change License, and you may use the Software under the terms of the Apache License, Version 2.0.
+
+### Contributions
+
+Any contribution intentionally submitted for inclusion in the Software by you shall be under the terms and conditions of this License, without any additional terms or conditions, unless you and we have executed a separate written agreement governing such contributions.
+
+### Patents
+
+If you institute patent litigation against any entity (including a cross-claim or counterclaim in a lawsuit) alleging that the Software infringes a patent, then any rights granted to you under this License for the Software shall terminate as of the date such litigation is filed.
+
+### Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+### Termination
+
+Your rights under this License will terminate automatically if you breach any of its terms.
+
+---
+
+## Frequently Asked Questions
+
+### Can I self-host PlexMCP for my company?
+
+**Yes!** Self-hosting for your own organization's internal use is always permitted, regardless of your company's revenue.
+
+### Does this apply to organizations under $1M revenue?
+
+No. Organizations with less than $1M annual revenue can use PlexMCP for any purpose except operating a competing hosted service.
+
+### What counts as "competing"?
+
+Only offering a hosted MCP gateway service substantially similar to PlexMCP Cloud. Building products that use MCPs, integrating with PlexMCP, or self-hosting are not competing uses.
+
+### When does this become fully open source?
+
+On January 6, 2031, this license automatically converts to Apache 2.0, making the Software fully open source with no restrictions.
+
+### How do I get a commercial license?
+
+Contact sales@plexmcp.com with your requirements.

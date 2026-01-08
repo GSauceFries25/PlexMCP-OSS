@@ -1,0 +1,83 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/api",
+    "crates/billing",
+    "crates/worker",
+    "crates/shared",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+authors = ["Tyler Mailman"]
+license = "FSL-1.1-Apache-2.0"
+repository = "https://github.com/PlexMCP/plexmcp"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# Web framework
+axum = { version = "0.7", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "time", "migrate"] }
+
+# Redis
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+
+# Authentication
+jsonwebtoken = "9.3"
+argon2 = "0.5"
+
+# Billing (Stripe)
+async-stripe = { version = "0.39", features = ["runtime-tokio-hyper"] }
+
+# Utilities
+uuid = { version = "1.10", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Retry logic with exponential backoff
+tokio-retry = "0.3"
+
+# Configuration
+dotenvy = "0.15"
+
+[workspace.lints.clippy]
+# Deny unwrap() in production code to prevent panics
+unwrap_used = "deny"
+# Deny expect() in production code (similar to unwrap)
+expect_used = "deny"
+# Allow unwrap/expect in tests
+# (Individual test files can use #[allow(clippy::unwrap_used)])
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Docker-optimized profile (faster builds, still optimized)
+# Use with: cargo build --profile docker
+[profile.docker]
+inherits = "release"
+lto = "thin"           # Thin LTO: faster than full LTO, still good optimization
+codegen-units = 4      # Parallel codegen: 4x faster compile, minimal runtime cost
+opt-level = 3          # Maximum optimization
+panic = "abort"        # Smaller binaries, no unwinding
+strip = true           # Strip debug symbols

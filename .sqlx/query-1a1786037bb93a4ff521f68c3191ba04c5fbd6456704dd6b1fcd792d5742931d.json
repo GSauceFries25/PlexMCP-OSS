@@ -1,0 +1,108 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO email_routing_rules (\n            pattern,\n            pattern_type,\n            priority,\n            action,\n            ticket_category,\n            route_to_user_id,\n            forward_to_email,\n            description,\n            created_by\n        ) VALUES ($1, $2, $3, $4, $5::TEXT::ticket_category, $6, $7, $8, $9)\n        RETURNING\n            id,\n            pattern,\n            pattern_type,\n            priority,\n            action,\n            ticket_category::TEXT as \"ticket_category?\",\n            route_to_user_id,\n            forward_to_email,\n            is_active,\n            is_system,\n            description,\n            created_by,\n            created_at,\n            updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "pattern",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "pattern_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "priority",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "action",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "ticket_category?",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "route_to_user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 7,
+        "name": "forward_to_email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "is_system",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int4",
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "1a1786037bb93a4ff521f68c3191ba04c5fbd6456704dd6b1fcd792d5742931d"
+}

@@ -1,0 +1,26 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="favGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- "The Plex" - Geometric P logo with fading dots -->
+  <!-- Vertical bar of P -->
+  <rect x="4" y="4" width="6" height="24" rx="1.5" fill="url(#favGradient)"/>
+
+  <!-- Top horizontal -->
+  <rect x="9" y="4" width="14" height="6" rx="1.5" fill="url(#favGradient)"/>
+
+  <!-- Right side vertical -->
+  <rect x="20" y="9" width="6" height="10" rx="1.5" fill="url(#favGradient)"/>
+
+  <!-- Bottom horizontal of P bowl -->
+  <rect x="9" y="16" width="14" height="6" rx="1.5" fill="url(#favGradient)"/>
+
+  <!-- Multiplexing dots - representing connections (fading down) -->
+  <circle cx="27" cy="7" r="2" fill="url(#favGradient)" opacity="0.6"/>
+  <circle cx="29" cy="14" r="1.7" fill="url(#favGradient)" opacity="0.4"/>
+  <circle cx="28" cy="22" r="1.4" fill="url(#favGradient)" opacity="0.3"/>
+</svg>

@@ -1,0 +1,6 @@
+# Clippy configuration
+# Note: unwrap_used and expect_used lints are configured in Cargo.toml [workspace.lints.clippy]
+# We removed disallowed-methods here because it incorrectly flags macro expansions (e.g., json!)
+# while the workspace lints are smarter about this.
+
+cognitive-complexity-threshold = 25

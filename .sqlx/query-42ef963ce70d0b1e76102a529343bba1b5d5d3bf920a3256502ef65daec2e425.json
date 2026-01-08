@@ -1,0 +1,114 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE custom_domains\n        SET is_active = $3, updated_at = NOW()\n        WHERE id = $1 AND user_id = $2\n        RETURNING\n            id,\n            user_id,\n            domain,\n            subdomain,\n            verification_token,\n            verification_status::TEXT as \"verification_status!\",\n            verification_attempts,\n            last_verification_at,\n            verified_at,\n            ssl_status::TEXT as \"ssl_status!\",\n            ssl_provisioned_at,\n            ssl_expires_at,\n            cname_target,\n            is_active,\n            created_at,\n            updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "domain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "subdomain",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "verification_token",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "verification_status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "verification_attempts",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "last_verification_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "verified_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "ssl_status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "ssl_provisioned_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "ssl_expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "cname_target",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 13,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 14,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      null,
+      false,
+      true,
+      true,
+      null,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "42ef963ce70d0b1e76102a529343bba1b5d5d3bf920a3256502ef65daec2e425"
+}

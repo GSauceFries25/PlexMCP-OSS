@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO admin_email_messages (\n            user_id,\n            message_id,\n            folder_id,\n            from_address,\n            to_addresses,\n            cc_addresses,\n            bcc_addresses,\n            subject,\n            body_text,\n            body_html,\n            is_read,\n            sent_at\n        )\n        SELECT\n            $1, $2, f.id, $3, $4::TEXT[], $5::TEXT[], $6::TEXT[],\n            $7, $8, $9, true, $10\n        FROM admin_email_folders f\n        WHERE f.user_id = $1 AND f.folder_type = 'sent'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bab9e624b62700d8cae2320b87a36d07eb6c324c1ebfbded9b082aa77549f68b"
+}

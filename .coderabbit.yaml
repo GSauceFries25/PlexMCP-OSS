@@ -1,0 +1,35 @@
+language: rust,typescript
+reviews:
+  profile: balanced  # balanced | thorough | chill
+  path_filters:
+    crates/**/*.rs:
+      - security: strict
+      - unsafe_code: justify
+      - error_handling: comprehensive
+    web/src/**/*.{ts,tsx}:
+      - react_hooks: enforce_rules
+      - xss_prevention: strict
+      - accessibility: wcag_aa
+    migrations/**/*.sql:
+      - reversible_migrations: enforce
+      - breaking_changes: warn
+  tools:
+    rust:
+      - clippy
+      - rustfmt
+    typescript:
+      - eslint
+      - biome
+  auto_review:
+    exclude_paths:
+      - "**/test/**"
+      - "**/*.test.*"
+      - "**/node_modules/**"
+      - "**/target/**"
+      - ".claude/**"
+      - ".coderabbit/**"
+      - ".embeddings/**"
+      - ".git/**"
+      - "**/dist/**"
+      - "**/.next/**"
+      - "**/build/**"

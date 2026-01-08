@@ -1,0 +1,30 @@
+[package]
+name = "plexmcp-worker"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "plexmcp-worker"
+path = "src/main.rs"
+
+[dependencies]
+plexmcp-shared = { path = "../shared" }
+plexmcp-billing = { path = "../billing" }
+plexmcp-api = { path = "../api" }
+
+tokio = { workspace = true }
+reqwest = { workspace = true }
+tokio-cron-scheduler = "0.13"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+redis = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+dotenvy = { workspace = true }

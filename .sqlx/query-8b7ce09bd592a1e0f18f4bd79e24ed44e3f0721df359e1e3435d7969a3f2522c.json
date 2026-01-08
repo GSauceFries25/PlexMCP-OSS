@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO admin_audit_log (admin_user_id, action, target_type, target_id, details)\n        VALUES ($1, $2, 'email_routing_rule', $3, $4)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8b7ce09bd592a1e0f18f4bd79e24ed44e3f0721df359e1e3435d7969a3f2522c"
+}

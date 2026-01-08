@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            id as \"id!\",\n            user_id as \"user_id!\",\n            email_address as \"email_address!\",\n            is_active as \"is_active!\",\n            auto_generated as \"auto_generated!\",\n            created_by,\n            created_at as \"created_at!\",\n            updated_at as \"updated_at!\"\n        FROM get_user_email_assignments($1)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "email_address!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_active!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "auto_generated!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "updated_at!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "568c0200fb7ba7667458794ba6a0a902c83a7e6cb29ab2b7b1822ff730b8d28d"
+}

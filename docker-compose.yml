@@ -1,0 +1,205 @@
+# PlexMCP Self-Hosting Configuration
+#
+# USAGE:
+#   Pre-built images (recommended):
+#     docker compose --profile prebuilt up -d
+#
+#   Build from source:
+#     docker compose --profile build up -d
+#
+#   Development (local build, single arch):
+#     docker compose --profile dev up -d
+#
+# Quick Start:
+#   1. Copy .env.example to .env
+#   2. Run: ./scripts/setup.sh (or manually generate secrets)
+#   3. Run: docker compose --profile prebuilt up -d
+#   4. Open http://localhost:3000
+#
+# For production deployments, see SELF_HOSTING.md
+
+services:
+  # =============================================================================
+  # Infrastructure Services
+  # =============================================================================
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: plexmcp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plexmcp_dev_password}
+      POSTGRES_DB: plexmcp
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plexmcp -d plexmcp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =============================================================================
+  # Pre-built Images (Recommended)
+  # Use: docker compose --profile prebuilt up -d
+  # =============================================================================
+
+  # PlexMCP API Server (pre-built from GHCR)
+  api:
+    image: ghcr.io/plexmcp/plexmcp-api:${PLEXMCP_VERSION:-latest}
+    profiles: ["prebuilt"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://plexmcp:${POSTGRES_PASSWORD:-plexmcp_dev_password}@postgres:5432/plexmcp
+
+      # Redis
+      REDIS_URL: redis://redis:6379
+
+      # Server
+      BIND_ADDRESS: 0.0.0.0:8080
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      BASE_DOMAIN: ${BASE_DOMAIN:-localhost}
+
+      # Authentication (generate with: openssl rand -hex 32)
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required - run ./scripts/setup.sh}
+      API_KEY_HMAC_SECRET: ${API_KEY_HMAC_SECRET:?API_KEY_HMAC_SECRET is required}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY is required}
+      JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-24}
+
+      # Self-hosted mode (disables cloud features)
+      PLEXMCP_SELF_HOSTED: "true"
+      ENABLE_BILLING: "false"
+      ENABLE_SIGNUP: ${ENABLE_SIGNUP:-true}
+      ENABLE_EMAIL_ROUTING: "false"
+
+      # MCP Settings
+      MCP_REQUEST_TIMEOUT_MS: ${MCP_REQUEST_TIMEOUT_MS:-30000}
+      MCP_MAX_CONNECTIONS_PER_ORG: ${MCP_MAX_CONNECTIONS_PER_ORG:-100}
+
+      # Logging
+      RUST_LOG: ${RUST_LOG:-info,plexmcp=debug}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PlexMCP Web Frontend (pre-built from GHCR)
+  web:
+    image: ghcr.io/plexmcp/plexmcp-web:${PLEXMCP_VERSION:-latest}
+    profiles: ["prebuilt"]
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NEXT_PUBLIC_API_URL: ${PUBLIC_URL:-http://localhost:8080}
+      NEXT_PUBLIC_APP_URL: ${APP_URL:-http://localhost:3000}
+      NEXT_PUBLIC_SELF_HOSTED: "true"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+  # =============================================================================
+  # Build from Source
+  # Use: docker compose --profile build up -d
+  # =============================================================================
+
+  # PlexMCP API Server (build from source)
+  api-build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["build", "dev"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://plexmcp:${POSTGRES_PASSWORD:-plexmcp_dev_password}@postgres:5432/plexmcp
+
+      # Redis
+      REDIS_URL: redis://redis:6379
+
+      # Server
+      BIND_ADDRESS: 0.0.0.0:8080
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      BASE_DOMAIN: ${BASE_DOMAIN:-localhost}
+
+      # Authentication (generate with: openssl rand -hex 32)
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required - run ./scripts/setup.sh}
+      API_KEY_HMAC_SECRET: ${API_KEY_HMAC_SECRET:?API_KEY_HMAC_SECRET is required}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY is required}
+      JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-24}
+
+      # Self-hosted mode (disables cloud features)
+      PLEXMCP_SELF_HOSTED: "true"
+      ENABLE_BILLING: "false"
+      ENABLE_SIGNUP: ${ENABLE_SIGNUP:-true}
+      ENABLE_EMAIL_ROUTING: "false"
+
+      # MCP Settings
+      MCP_REQUEST_TIMEOUT_MS: ${MCP_REQUEST_TIMEOUT_MS:-30000}
+      MCP_MAX_CONNECTIONS_PER_ORG: ${MCP_MAX_CONNECTIONS_PER_ORG:-100}
+
+      # Logging
+      RUST_LOG: ${RUST_LOG:-info,plexmcp=debug}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PlexMCP Web Frontend (build from source)
+  web-build:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    profiles: ["build", "dev"]
+    restart: unless-stopped
+    depends_on:
+      - api-build
+    environment:
+      NEXT_PUBLIC_API_URL: ${PUBLIC_URL:-http://localhost:8080}
+      NEXT_PUBLIC_APP_URL: ${APP_URL:-http://localhost:3000}
+      NEXT_PUBLIC_SELF_HOSTED: "true"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: plexmcp

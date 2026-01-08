@@ -1,0 +1,30 @@
+[package]
+name = "plexmcp-billing"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+plexmcp-shared = { path = "../shared" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+async-stripe = { workspace = true }
+uuid = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+
+# Webhook signature verification (workaround for async-stripe API version incompatibility)
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
