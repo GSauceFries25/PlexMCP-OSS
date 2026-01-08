@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -25,18 +25,13 @@ function ResetPinContent() {
   const [step, setStep] = useState<1 | 2>(1);
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() =>
+    !token ? "No reset token provided. Please use the link from your email." : ""
+  );
   const [isSuccess, setIsSuccess] = useState(false);
   const [invalidatedCount, setInvalidatedCount] = useState(0);
 
   const resetPin$ = useResetPin();
-
-  // Check for token on mount
-  useEffect(() => {
-    if (!token) {
-      setError("No reset token provided. Please use the link from your email.");
-    }
-  }, [token]);
 
   const handleNewPinChange = (value: string) => {
     setNewPin(value);

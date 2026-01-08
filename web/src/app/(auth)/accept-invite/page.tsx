@@ -311,7 +311,7 @@ function AcceptInviteContent() {
       <CardContent className="space-y-6">
         {/* Email display */}
         <div className="bg-muted/50 rounded-lg p-4 text-center">
-          <p className="text-sm text-muted-foreground">You're joining as</p>
+          <p className="text-sm text-muted-foreground">You&apos;re joining as</p>
           <p className="font-medium">{invitation?.email}</p>
         </div>
 
