@@ -145,8 +145,7 @@ struct BackupCodeRow {
 
 /// Parse the TOTP encryption key from config
 fn get_encryption_key(state: &AppState) -> Result<[u8; 32], ApiError> {
-    totp::parse_encryption_key(&state.config.totp_encryption_key)
-        .map_err(|_| ApiError::Internal)
+    totp::parse_encryption_key(&state.config.totp_encryption_key).map_err(|_| ApiError::Internal)
 }
 
 /// Get 2FA record for a user
@@ -154,18 +153,18 @@ async fn get_2fa_record(state: &AppState, user_id: Uuid) -> Result<Option<TwoFac
     sqlx::query_as::<_, TwoFactorRow>(
         "SELECT user_id, totp_secret_encrypted, totp_secret_nonce, is_enabled, enabled_at, \
          failed_attempts, locked_until, last_used_at, created_at, updated_at \
-         FROM user_2fa WHERE user_id = $1"
+         FROM user_2fa WHERE user_id = $1",
     )
-        .bind(user_id)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(|e| ApiError::Database(e.to_string()))
+    .bind(user_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| ApiError::Database(e.to_string()))
 }
 
 /// Count unused backup codes for a user
 async fn count_backup_codes(state: &AppState, user_id: Uuid) -> Result<i64, ApiError> {
     let count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM user_2fa_backup_codes WHERE user_id = $1 AND used_at IS NULL"
+        "SELECT COUNT(*) FROM user_2fa_backup_codes WHERE user_id = $1 AND used_at IS NULL",
     )
     .bind(user_id)
     .fetch_one(&state.pool)
@@ -182,7 +181,8 @@ async fn verify_2fa_code_internal(
     email: &str,
     code: &str,
 ) -> Result<bool, ApiError> {
-    let tfa = get_2fa_record(state, user_id).await?
+    let tfa = get_2fa_record(state, user_id)
+        .await?
         .ok_or_else(|| ApiError::BadRequest("2FA is not enabled".to_string()))?;
 
     // Check lockout
@@ -202,10 +202,12 @@ async fn verify_2fa_code_internal(
     .map_err(|_| ApiError::Internal)?;
 
     // Try TOTP code first (6 digits)
-    if code.len() == 6 && code.chars().all(|c| c.is_ascii_digit())
-        && totp::verify_code(&secret, code, email).map_err(|_| ApiError::Internal)? {
-            // Reset failed attempts on success
-            sqlx::query(
+    if code.len() == 6
+        && code.chars().all(|c| c.is_ascii_digit())
+        && totp::verify_code(&secret, code, email).map_err(|_| ApiError::Internal)?
+    {
+        // Reset failed attempts on success
+        sqlx::query(
                 "UPDATE user_2fa SET failed_attempts = 0, locked_until = NULL, last_used_at = $1 WHERE user_id = $2"
             )
             .bind(now)
@@ -214,13 +216,13 @@ async fn verify_2fa_code_internal(
             .await
             .map_err(|e| ApiError::Database(e.to_string()))?;
 
-            return Ok(true);
-        }
+        return Ok(true);
+    }
 
     // Try backup codes (XXXX-XXXX format or without hyphen)
     let backup_codes: Vec<BackupCodeRow> = sqlx::query_as(
         "SELECT id, user_id, code_hash, used_at, created_at \
-         FROM user_2fa_backup_codes WHERE user_id = $1 AND used_at IS NULL"
+         FROM user_2fa_backup_codes WHERE user_id = $1 AND used_at IS NULL",
     )
     .bind(user_id)
     .fetch_all(&state.pool)
@@ -259,15 +261,13 @@ async fn verify_2fa_code_internal(
         None
     };
 
-    sqlx::query(
-        "UPDATE user_2fa SET failed_attempts = $1, locked_until = $2 WHERE user_id = $3"
-    )
-    .bind(new_attempts)
-    .bind(locked_until)
-    .bind(user_id)
-    .execute(&state.pool)
-    .await
-    .map_err(|e| ApiError::Database(e.to_string()))?;
+    sqlx::query("UPDATE user_2fa SET failed_attempts = $1, locked_until = $2 WHERE user_id = $3")
+        .bind(new_attempts)
+        .bind(locked_until)
+        .bind(user_id)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| ApiError::Database(e.to_string()))?;
 
     Ok(false)
 }
@@ -405,7 +405,9 @@ pub async fn confirm_2fa_setup(
     .fetch_optional(&state.pool)
     .await
     .map_err(|e| ApiError::Database(e.to_string()))?
-    .ok_or_else(|| ApiError::BadRequest("Setup session expired. Please start again.".to_string()))?;
+    .ok_or_else(|| {
+        ApiError::BadRequest("Setup session expired. Please start again.".to_string())
+    })?;
 
     // Decrypt secret
     let encryption_key = get_encryption_key(&state)?;
@@ -517,7 +519,9 @@ pub async fn confirm_2fa_setup(
     let email_to = email.to_string();
     let client_ip = extract_client_ip(&headers);
     tokio::spawn(async move {
-        email_service.send_2fa_enabled(&email_to, client_ip.as_deref()).await;
+        email_service
+            .send_2fa_enabled(&email_to, client_ip.as_deref())
+            .await;
     });
 
     Ok(Json(TwoFactorConfirmResponse { backup_codes }))
@@ -565,7 +569,8 @@ pub async fn verify_2fa(
         }))
     } else {
         // Get updated record for remaining attempts
-        let updated = get_2fa_record(&state, user_id).await?
+        let updated = get_2fa_record(&state, user_id)
+            .await?
             .ok_or_else(|| ApiError::Database("2FA record disappeared".to_string()))?;
         let remaining = totp::MAX_2FA_ATTEMPTS - updated.failed_attempts;
         let is_locked = updated.locked_until.map(|u| u > now).unwrap_or(false);
@@ -649,7 +654,9 @@ pub async fn disable_2fa(
     let email_to = email.to_string();
     let client_ip = extract_client_ip(&headers);
     tokio::spawn(async move {
-        email_service.send_2fa_disabled(&email_to, client_ip.as_deref()).await;
+        email_service
+            .send_2fa_disabled(&email_to, client_ip.as_deref())
+            .await;
     });
 
     Ok(StatusCode::NO_CONTENT)
@@ -824,14 +831,12 @@ pub async fn revoke_trusted_device(
 ) -> ApiResult<StatusCode> {
     let user_id = auth_user.user_id.ok_or(ApiError::Unauthorized)?;
 
-    let result = sqlx::query(
-        "DELETE FROM user_trusted_devices WHERE id = $1 AND user_id = $2"
-    )
-    .bind(device_id)
-    .bind(user_id)
-    .execute(&state.pool)
-    .await
-    .map_err(|e| ApiError::Database(e.to_string()))?;
+    let result = sqlx::query("DELETE FROM user_trusted_devices WHERE id = $1 AND user_id = $2")
+        .bind(device_id)
+        .bind(user_id)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| ApiError::Database(e.to_string()))?;
 
     if result.rows_affected() == 0 {
         return Err(ApiError::NotFound);

@@ -128,7 +128,11 @@ impl OverageService {
     }
 
     pub fn with_rates(stripe: StripeClient, pool: PgPool, rates: OverageRates) -> Self {
-        Self { stripe, pool, rates }
+        Self {
+            stripe,
+            pool,
+            rates,
+        }
     }
 
     /// Calculate and record overage for a billing period
@@ -164,7 +168,7 @@ impl OverageService {
             )
             VALUES ($1, $2, $3, 'requests', $4, $5, $6, $7, $8, 'pending')
             RETURNING *
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(period_start)
@@ -200,7 +204,7 @@ impl OverageService {
                     base_limit, actual_usage, overage_amount, rate_per_unit_cents,
                     total_charge_cents, stripe_invoice_item_id, status, created_at,
                     invoiced_at, paid_at
-             FROM overage_charges WHERE id = $1 AND status = 'pending'"
+             FROM overage_charges WHERE id = $1 AND status = 'pending'",
         )
         .bind(charge_id)
         .fetch_optional(&self.pool)
@@ -209,7 +213,8 @@ impl OverageService {
         .ok_or_else(|| BillingError::NotFound("Overage charge not found".to_string()))?;
 
         // Create Stripe invoice item
-        let customer_id = stripe_customer_id.parse::<CustomerId>()
+        let customer_id = stripe_customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
         let description = format!(
@@ -234,7 +239,7 @@ impl OverageService {
             SET stripe_invoice_item_id = $1, status = 'invoiced', invoiced_at = NOW()
             WHERE id = $2
             RETURNING *
-            "#
+            "#,
         )
         .bind(invoice_item.id.to_string())
         .bind(charge_id)
@@ -254,13 +259,11 @@ impl OverageService {
 
     /// Mark an overage charge as paid (called from webhook)
     pub async fn mark_paid(&self, charge_id: Uuid) -> BillingResult<()> {
-        sqlx::query(
-            "UPDATE overage_charges SET status = 'paid', paid_at = NOW() WHERE id = $1"
-        )
-        .bind(charge_id)
-        .execute(&self.pool)
-        .await
-        .map_err(|e| BillingError::Database(e.to_string()))?;
+        sqlx::query("UPDATE overage_charges SET status = 'paid', paid_at = NOW() WHERE id = $1")
+            .bind(charge_id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| BillingError::Database(e.to_string()))?;
 
         Ok(())
     }
@@ -323,7 +326,7 @@ impl OverageService {
                     base_limit, actual_usage, overage_amount, rate_per_unit_cents,
                     total_charge_cents, stripe_invoice_item_id, status, created_at,
                     invoiced_at, paid_at
-             FROM overage_charges WHERE org_id = $1 ORDER BY created_at DESC LIMIT $2"
+             FROM overage_charges WHERE org_id = $1 ORDER BY created_at DESC LIMIT $2",
         )
         .bind(org_id)
         .bind(limit)
@@ -351,13 +354,9 @@ impl OverageService {
             .await?;
 
         // Calculate overage
-        let charge = self.calculate_period_overage(
-            org_id,
-            period_start,
-            period_end,
-            limit,
-            actual_usage,
-        ).await?;
+        let charge = self
+            .calculate_period_overage(org_id, period_start, period_end, limit, actual_usage)
+            .await?;
 
         // Bill to Stripe if there's an overage
         if let Some(charge) = charge {
@@ -454,7 +453,7 @@ impl OverageService {
             WHERE org_id = $1
               AND status IN ('pending', 'awaiting_payment')
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_all(&self.pool)
@@ -499,7 +498,7 @@ impl OverageService {
             GROUP BY early_payment_invoice_id
             ORDER BY MAX(created_at) DESC
             LIMIT 1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -508,7 +507,8 @@ impl OverageService {
 
         if let Some((session_id, amount_cents, charge_count)) = existing_session {
             // Check if session is still valid by retrieving it from Stripe
-            let session_id_parsed = session_id.parse::<stripe::CheckoutSessionId>()
+            let session_id_parsed = session_id
+                .parse::<stripe::CheckoutSessionId>()
                 .map_err(|e| BillingError::StripeApi(format!("Invalid session ID: {}", e)))?;
 
             match CheckoutSession::retrieve(self.stripe.inner(), &session_id_parsed, &[]).await {
@@ -547,7 +547,7 @@ impl OverageService {
                             WHERE org_id = $1
                               AND status = 'awaiting_payment'
                               AND early_payment_invoice_id = $2
-                            "#
+                            "#,
                         )
                         .bind(org_id)
                         .bind(&session_id)
@@ -567,7 +567,7 @@ impl OverageService {
                         WHERE org_id = $1
                           AND status = 'awaiting_payment'
                           AND early_payment_invoice_id = $2
-                        "#
+                        "#,
                     )
                     .bind(org_id)
                     .bind(&session_id)
@@ -589,7 +589,7 @@ impl OverageService {
             WHERE org_id = $1
               AND status = 'awaiting_payment'
               AND (early_payment_invoice_id IS NULL OR early_payment_invoice_id = '')
-            "#
+            "#,
         )
         .bind(org_id)
         .execute(&self.pool)
@@ -597,7 +597,10 @@ impl OverageService {
         .ok(); // Ignore errors here, we'll proceed with the main query
 
         // Use a transaction with row-level locking to prevent double-charging
-        let mut tx = self.pool.begin().await
+        let mut tx = self
+            .pool
+            .begin()
+            .await
             .map_err(|e| BillingError::Database(e.to_string()))?;
 
         // Atomically select and lock pending charges for this org
@@ -613,7 +616,7 @@ impl OverageService {
               AND (paid_early IS NULL OR paid_early = false)
             ORDER BY created_at ASC
             FOR UPDATE SKIP LOCKED
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_all(&mut *tx)
@@ -635,27 +638,26 @@ impl OverageService {
             r#"
             UPDATE overage_charges SET status = 'processing'
             WHERE id = ANY($1)
-            "#
+            "#,
         )
         .bind(&charge_ids)
         .execute(&mut *tx)
         .await
         .map_err(|e| BillingError::Database(e.to_string()))?;
 
-        tx.commit().await
+        tx.commit()
+            .await
             .map_err(|e| BillingError::Database(e.to_string()))?;
 
         // Parse customer ID
-        let customer_id = stripe_customer_id.parse::<CustomerId>()
+        let customer_id = stripe_customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
         // Create Stripe Checkout Session for one-time payment
-        let checkout_result = self.create_pay_now_checkout(
-            org_id,
-            customer_id,
-            total_cents,
-            total_overage,
-        ).await;
+        let checkout_result = self
+            .create_pay_now_checkout(org_id, customer_id, total_cents, total_overage)
+            .await;
 
         // Handle errors by resetting charges
         let session = match checkout_result {
@@ -687,7 +689,7 @@ impl OverageService {
                     paid_early = false,
                     early_payment_invoice_id = $1
                 WHERE id = $2
-                "#
+                "#,
             )
             .bind(&session_id)
             .bind(charge_id)
@@ -723,7 +725,7 @@ impl OverageService {
                 paid_at = NOW()
             WHERE early_payment_invoice_id = $1
               AND status IN ('awaiting_payment', 'processing', 'invoiced')
-            "#
+            "#,
         )
         .bind(stripe_invoice_id)
         .execute(&self.pool)
@@ -745,9 +747,14 @@ impl OverageService {
 
     /// Mark overage charges as paid when a subscription invoice is paid
     /// Looks up invoice items on the paid invoice and matches them to overage charges
-    pub async fn mark_invoiced_charges_paid(&self, org_id: Uuid, stripe_invoice_id: &str) -> BillingResult<i32> {
+    pub async fn mark_invoiced_charges_paid(
+        &self,
+        org_id: Uuid,
+        stripe_invoice_id: &str,
+    ) -> BillingResult<i32> {
         // Fetch invoice line items from Stripe to find any overage invoice items
-        let invoice_id = stripe_invoice_id.parse::<stripe::InvoiceId>()
+        let invoice_id = stripe_invoice_id
+            .parse::<stripe::InvoiceId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid invoice ID: {}", e)))?;
 
         let invoice = stripe::Invoice::retrieve(self.stripe.inner(), &invoice_id, &[])
@@ -755,16 +762,17 @@ impl OverageService {
             .map_err(|e| BillingError::StripeApi(e.to_string()))?;
 
         // Get line item IDs from the invoice
-        let line_item_ids: Vec<String> = invoice.lines
+        let line_item_ids: Vec<String> = invoice
+            .lines
             .as_ref()
             .map(|lines| {
-                lines.data.iter()
+                lines
+                    .data
+                    .iter()
                     .filter_map(|item| {
-                        item.invoice_item.as_ref().map(|ii| {
-                            match ii {
-                                stripe::Expandable::Id(id) => id.to_string(),
-                                stripe::Expandable::Object(obj) => obj.id.to_string(),
-                            }
+                        item.invoice_item.as_ref().map(|ii| match ii {
+                            stripe::Expandable::Id(id) => id.to_string(),
+                            stripe::Expandable::Object(obj) => obj.id.to_string(),
                         })
                     })
                     .collect()
@@ -784,7 +792,7 @@ impl OverageService {
             WHERE org_id = $1
               AND stripe_invoice_item_id = ANY($2)
               AND status = 'invoiced'
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(&line_item_ids)
@@ -817,7 +825,7 @@ impl OverageService {
                 paid_at = NOW()
             WHERE org_id = $1
               AND status = 'pending_upgrade_payment'
-            "#
+            "#,
         )
         .bind(org_id)
         .execute(&self.pool)
@@ -859,7 +867,7 @@ impl OverageService {
             WHERE org_id = $1
               AND period_start >= date_trunc('day', $2::timestamptz)
               AND period_start < date_trunc('day', $3::timestamptz) + interval '1 day'
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(period_start)
@@ -884,7 +892,7 @@ impl OverageService {
                   AND resource_type = 'requests'
                   AND status = 'pending'
                   AND (paid_early IS NULL OR paid_early = false)
-                "#
+                "#,
             )
             .bind(org_id)
             .bind(period_start)
@@ -918,7 +926,7 @@ impl OverageService {
               AND billing_period_start = $2
               AND resource_type = 'requests'
               AND status IN ('paid', 'invoiced')
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(period_start)
@@ -941,7 +949,7 @@ impl OverageService {
                   AND resource_type = 'requests'
                   AND status = 'pending'
                   AND (paid_early IS NULL OR paid_early = false)
-                "#
+                "#,
             )
             .bind(org_id)
             .bind(period_start)
@@ -961,7 +969,7 @@ impl OverageService {
               AND billing_period_start = $2
               AND resource_type = 'requests'
               AND status IN ('paid', 'invoiced')
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(period_start)
@@ -982,7 +990,7 @@ impl OverageService {
               AND resource_type = 'requests'
               AND status IN ('pending', 'awaiting_payment')
               AND (paid_early IS NULL OR paid_early = false)
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(period_start)
@@ -1000,7 +1008,7 @@ impl OverageService {
                     total_charge_cents = $3
                 WHERE id = $4
                 RETURNING *
-                "#
+                "#,
             )
             .bind(total_usage)
             .bind(incremental_overage)
@@ -1020,7 +1028,7 @@ impl OverageService {
                 )
                 VALUES ($1, $2, $3, 'requests', $4, $5, $6, $7, $8, 'pending')
                 RETURNING *
-                "#
+                "#,
             )
             .bind(org_id)
             .bind(period_start)
@@ -1059,7 +1067,7 @@ impl OverageService {
             WHERE org_id = $1
               AND status IN ('awaiting_payment', 'processing', 'invoiced')
               AND early_payment_invoice_id IS NOT NULL
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_all(&self.pool)
@@ -1110,7 +1118,7 @@ impl OverageService {
                         paid_early = true,
                         paid_at = NOW()
                     WHERE id = $1
-                    "#
+                    "#,
                 )
                 .bind(charge_id)
                 .execute(&self.pool)
@@ -1232,7 +1240,7 @@ impl OverageService {
                 paid_early = false
             WHERE id = ANY($1)
               AND status = 'processing'
-            "#
+            "#,
         )
         .bind(charge_ids)
         .execute(&self.pool)
@@ -1268,7 +1276,7 @@ impl OverageService {
               AND billing_period_end <= $3
               AND status = 'pending'
               AND (paid_early IS NULL OR paid_early = false)
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(period_start)

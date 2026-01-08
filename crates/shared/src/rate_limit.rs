@@ -163,7 +163,9 @@ impl InMemoryRateLimiter {
             entry.0 += 1;
         }
 
-        let remaining = config.requests_per_minute.saturating_sub(current_count + if allowed { 1 } else { 0 });
+        let remaining = config
+            .requests_per_minute
+            .saturating_sub(current_count + if allowed { 1 } else { 0 });
         let reset_at = OffsetDateTime::from_unix_timestamp(window_start + 60)
             .unwrap_or(OffsetDateTime::now_utc());
 
@@ -279,7 +281,9 @@ impl RateLimiter {
         // Return the most restrictive remaining count
         Ok(RateLimitResult2 {
             allowed: true,
-            remaining_minute: api_key_result.remaining_minute.min(org_result.remaining_minute),
+            remaining_minute: api_key_result
+                .remaining_minute
+                .min(org_result.remaining_minute),
             remaining_hour: None,
             remaining_monthly: None,
             reset_at: api_key_result.reset_at.min(org_result.reset_at),
@@ -326,7 +330,10 @@ impl RateLimiter {
     /// Configurable via RATE_LIMIT_PASSWORD_RESET_PER_MINUTE (default: 5)
     ///
     /// SOC 2 CC6.1: Prevents password reset abuse
-    pub async fn check_password_reset(&self, ip_address: &str) -> RateLimitResult<RateLimitResult2> {
+    pub async fn check_password_reset(
+        &self,
+        ip_address: &str,
+    ) -> RateLimitResult<RateLimitResult2> {
         let key = format!("ratelimit:password_reset:ip:{}", ip_address);
         let config = RateLimitConfig {
             requests_per_minute: get_password_reset_rate_limit(),
@@ -488,12 +495,18 @@ mod tests {
         // API key limit: 5, Org limit: 10
         // First 5 requests should pass
         for _ in 0..5 {
-            let result = limiter.check_request(org_id, api_key_id, 5, 10).await.unwrap();
+            let result = limiter
+                .check_request(org_id, api_key_id, 5, 10)
+                .await
+                .unwrap();
             assert!(result.allowed);
         }
 
         // API key limit reached, should be blocked even though org has capacity
-        let result = limiter.check_request(org_id, api_key_id, 5, 10).await.unwrap();
+        let result = limiter
+            .check_request(org_id, api_key_id, 5, 10)
+            .await
+            .unwrap();
         assert!(!result.allowed);
     }
 
@@ -505,7 +518,10 @@ mod tests {
 
         // API key limit: 10, Org limit: 5
         // Combined check should return minimum remaining
-        let result = limiter.check_request(org_id, api_key_id, 10, 5).await.unwrap();
+        let result = limiter
+            .check_request(org_id, api_key_id, 10, 5)
+            .await
+            .unwrap();
         assert!(result.allowed);
         // remaining_minute should be min(api_key_remaining, org_remaining)
         // After 1 request: api_key=9, org=4, so min=4
@@ -547,8 +563,14 @@ mod tests {
 
         // Add some entries
         let config = RateLimitConfig::default();
-        limiter.check_rate_limit("test_key_1", &config).await.unwrap();
-        limiter.check_rate_limit("test_key_2", &config).await.unwrap();
+        limiter
+            .check_rate_limit("test_key_1", &config)
+            .await
+            .unwrap();
+        limiter
+            .check_rate_limit("test_key_2", &config)
+            .await
+            .unwrap();
 
         // Cleanup shouldn't remove recent entries
         limiter.cleanup().await;

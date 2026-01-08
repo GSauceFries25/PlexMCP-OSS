@@ -85,7 +85,6 @@ struct UserWithJoinedRow {
     joined_at: Option<OffsetDateTime>,
 }
 
-
 // =============================================================================
 // Handlers
 // =============================================================================
@@ -117,7 +116,7 @@ pub async fn list_users(
         LEFT JOIN organization_members om ON om.user_id = u.id AND om.org_id = $1
         WHERE u.org_id = $1
         ORDER BY om.created_at DESC NULLS LAST
-        "#
+        "#,
     )
     .bind(org_id)
     .fetch_all(&state.pool)
@@ -153,8 +152,8 @@ pub async fn get_user(
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
     // Users can only view themselves, owners/admins can view anyone in org
-    let can_view = auth_user.user_id == Some(user_id)
-        || ["owner", "admin"].contains(&auth_user.role.as_str());
+    let can_view =
+        auth_user.user_id == Some(user_id) || ["owner", "admin"].contains(&auth_user.role.as_str());
 
     if !can_view {
         return Err(ApiError::Forbidden);
@@ -165,7 +164,7 @@ pub async fn get_user(
         SELECT id, email, role, email_verified, last_login_at, created_at, updated_at
         FROM users
         WHERE id = $1 AND org_id = $2
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(org_id)
@@ -204,15 +203,19 @@ pub async fn invite_user(
         State(state),
         Extension(auth_user),
         Json(invitation_req),
-    ).await?;
+    )
+    .await?;
 
-    Ok((status, Json(InvitationResponse {
-        id: invitation.id,
-        email: invitation.email,
-        role: invitation.role,
-        expires_at: invitation.expires_at,
-        created_at: invitation.created_at,
-    })))
+    Ok((
+        status,
+        Json(InvitationResponse {
+            id: invitation.id,
+            email: invitation.email,
+            role: invitation.role,
+            expires_at: invitation.expires_at,
+            created_at: invitation.created_at,
+        }),
+    ))
 }
 
 /// Response for invitation (returned by invite_user)
@@ -241,7 +244,9 @@ pub async fn update_user(
 
     // Can't update yourself
     if auth_user.user_id == Some(user_id) {
-        return Err(ApiError::BadRequest("Cannot update your own role".to_string()));
+        return Err(ApiError::BadRequest(
+            "Cannot update your own role".to_string(),
+        ));
     }
 
     // Get current user
@@ -250,7 +255,7 @@ pub async fn update_user(
         SELECT id, email, role, email_verified, last_login_at, created_at, updated_at
         FROM users
         WHERE id = $1 AND org_id = $2
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(org_id)
@@ -291,7 +296,7 @@ pub async fn update_user(
         SELECT id, email, role, email_verified, last_login_at, created_at, updated_at
         FROM users
         WHERE id = $1
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_one(&state.pool)
@@ -332,7 +337,7 @@ pub async fn delete_user(
         SELECT id, email, role, email_verified, last_login_at, created_at, updated_at
         FROM users
         WHERE id = $1 AND org_id = $2
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(org_id)
@@ -347,16 +352,15 @@ pub async fn delete_user(
 
     // Can't delete the only owner
     if target_user.role == "owner" {
-        let owner_count: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM users WHERE org_id = $1 AND role = 'owner'"
-        )
-        .bind(org_id)
-        .fetch_one(&state.pool)
-        .await?;
+        let owner_count: (i64,) =
+            sqlx::query_as("SELECT COUNT(*) FROM users WHERE org_id = $1 AND role = 'owner'")
+                .bind(org_id)
+                .fetch_one(&state.pool)
+                .await?;
 
         if owner_count.0 <= 1 {
             return Err(ApiError::BadRequest(
-                "Cannot delete the only owner. Transfer ownership first.".to_string()
+                "Cannot delete the only owner. Transfer ownership first.".to_string(),
             ));
         }
     }

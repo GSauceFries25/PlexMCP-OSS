@@ -2,7 +2,10 @@
 
 use axum::{
     extract::{Request, State},
-    http::{header::{AUTHORIZATION, COOKIE}, Method, StatusCode},
+    http::{
+        header::{AUTHORIZATION, COOKIE},
+        Method, StatusCode,
+    },
     middleware::Next,
     response::{IntoResponse, Response},
     Json,
@@ -14,7 +17,7 @@ use sqlx::{FromRow, PgPool};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, RwLock, Mutex};
+use tokio::sync::{broadcast, Mutex, RwLock};
 use uuid::Uuid;
 
 /// Token cache TTL - cache Supabase verification results for 60 seconds
@@ -142,7 +145,11 @@ fn extract_token_from_cookie(request: &Request) -> Option<String> {
 /// Prefers Authorization header but falls back to cookie for SPA clients using HttpOnly cookies
 fn extract_bearer_token(request: &Request) -> Option<String> {
     // Try Authorization header first
-    if let Some(header) = request.headers().get(AUTHORIZATION).and_then(|h| h.to_str().ok()) {
+    if let Some(header) = request
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+    {
         if let Some(token) = header.strip_prefix("Bearer ") {
             return Some(token.to_string());
         }
@@ -259,7 +266,8 @@ pub async fn optional_auth(
 
     // Try API key (header only, no cookie fallback for API keys)
     if let Some(key) = extract_api_key(&request) {
-        if let Ok(auth_user) = authenticate_api_key(&auth_state, &key, ip_address, user_agent).await {
+        if let Ok(auth_user) = authenticate_api_key(&auth_state, &key, ip_address, user_agent).await
+        {
             request.extensions_mut().insert(auth_user);
         }
     }
@@ -308,7 +316,11 @@ pub async fn require_role(
 
 async fn authenticate_jwt(auth_state: &AuthState, token: &str) -> Result<AuthUser, AuthError> {
     // Log the start of JWT validation for debugging
-    let token_prefix = if token.len() > 20 { &token[..20] } else { token };
+    let token_prefix = if token.len() > 20 {
+        &token[..20]
+    } else {
+        token
+    };
     tracing::info!(token_prefix = %token_prefix, "authenticate_jwt: starting validation");
 
     // First try to validate as a PlexMCP-issued token
@@ -324,24 +336,21 @@ async fn authenticate_jwt(auth_state: &AuthState, token: &str) -> Result<AuthUse
         }
 
         // Get session ID for audit logging
-        let session_id: Option<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM user_sessions WHERE jti = $1"
-        )
-        .bind(&claims.jti)
-        .fetch_optional(&auth_state.pool)
-        .await
-        .ok()
-        .flatten();
+        let session_id: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM user_sessions WHERE jti = $1")
+                .bind(&claims.jti)
+                .fetch_optional(&auth_state.pool)
+                .await
+                .ok()
+                .flatten();
 
         // Verify the user still exists in the database (handles stale tokens after user ID changes)
-        let user_exists: Option<(bool,)> = sqlx::query_as(
-            "SELECT TRUE FROM users WHERE id = $1"
-        )
-        .bind(claims.sub)
-        .fetch_optional(&auth_state.pool)
-        .await
-        .ok()
-        .flatten();
+        let user_exists: Option<(bool,)> = sqlx::query_as("SELECT TRUE FROM users WHERE id = $1")
+            .bind(claims.sub)
+            .fetch_optional(&auth_state.pool)
+            .await
+            .ok()
+            .flatten();
 
         if user_exists.is_some() {
             // User exists with the ID in the token - use it
@@ -362,18 +371,17 @@ async fn authenticate_jwt(auth_state: &AuthState, token: &str) -> Result<AuthUse
             "JWT user_id not found in database, attempting email fallback"
         );
 
-        let existing_user: Option<ExistingUserWithOrgRow> = sqlx::query_as(
-            "SELECT id, org_id FROM users WHERE email = $1"
-        )
-        .bind(&claims.email)
-        .fetch_optional(&auth_state.pool)
-        .await
-        .map_err(|_| AuthError::DatabaseError)?;
+        let existing_user: Option<ExistingUserWithOrgRow> =
+            sqlx::query_as("SELECT id, org_id FROM users WHERE email = $1")
+                .bind(&claims.email)
+                .fetch_optional(&auth_state.pool)
+                .await
+                .map_err(|_| AuthError::DatabaseError)?;
 
         if let Some(user) = existing_user {
             // Found user by email - get their role from org_members
             let role: String = sqlx::query_scalar(
-                "SELECT role FROM organization_members WHERE user_id = $1 AND org_id = $2"
+                "SELECT role FROM organization_members WHERE user_id = $1 AND org_id = $2",
             )
             .bind(user.id)
             .bind(user.org_id)
@@ -424,8 +432,7 @@ async fn authenticate_jwt(auth_state: &AuthState, token: &str) -> Result<AuthUse
         };
 
         // Parse the user ID from Supabase response
-        let user_id = Uuid::parse_str(&supabase_user.id)
-            .map_err(|_| AuthError::InvalidToken)?;
+        let user_id = Uuid::parse_str(&supabase_user.id).map_err(|_| AuthError::InvalidToken)?;
 
         // Ensure the OAuth user exists in our users table (for foreign key constraints)
         // This handles users who authenticate via OAuth but don't have a record yet
@@ -434,7 +441,9 @@ async fn authenticate_jwt(auth_state: &AuthState, token: &str) -> Result<AuthUse
             &auth_state.pool,
             user_id,
             supabase_user.email.as_deref(),
-        ).await.map_err(|e| {
+        )
+        .await
+        .map_err(|e| {
             tracing::error!(user_id = %user_id, error = %e, "Failed to ensure OAuth user exists");
             AuthError::DatabaseError
         })?;
@@ -544,7 +553,8 @@ async fn verify_supabase_token_via_api(
 
         // SOC 2 CC6.1: Evict oldest entry if at capacity
         if cache.len() >= MAX_CACHE_ENTRIES {
-            if let Some(oldest_key) = cache.iter()
+            if let Some(oldest_key) = cache
+                .iter()
                 .min_by_key(|(_, v)| v.cached_at)
                 .map(|(k, _)| k.clone())
             {
@@ -586,7 +596,10 @@ async fn verify_supabase_token_api_call(
         })?;
 
     if !response.status().is_success() {
-        tracing::warn!("Supabase token verification failed with status: {}", response.status());
+        tracing::warn!(
+            "Supabase token verification failed with status: {}",
+            response.status()
+        );
         return Err(AuthError::InvalidToken);
     }
 
@@ -626,7 +639,7 @@ async fn ensure_oauth_user_exists(
         WHERE om.user_id = $1
         ORDER BY om.created_at ASC
         LIMIT 1
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -635,12 +648,10 @@ async fn ensure_oauth_user_exists(
     if let Some(membership) = existing_membership {
         // User has org membership - ensure they exist in users table with correct org_id
         // This is needed for foreign key constraints (e.g., api_keys.created_by)
-        let user_exists: Option<(bool,)> = sqlx::query_as(
-            "SELECT TRUE FROM users WHERE id = $1"
-        )
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?;
+        let user_exists: Option<(bool,)> = sqlx::query_as("SELECT TRUE FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
 
         if user_exists.is_none() {
             // User doesn't exist in users table yet - try to create them
@@ -663,7 +674,7 @@ async fn ensure_oauth_user_exists(
                 INSERT INTO users (id, email, password_hash, org_id, role, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, 'member', NOW(), NOW())
                 ON CONFLICT (id) DO NOTHING
-                "#
+                "#,
             )
             .bind(user_id)
             .bind(email_str)
@@ -682,13 +693,12 @@ async fn ensure_oauth_user_exists(
                     if e.to_string().contains("users_org_id_email_key") {
                         // A user with the same org+email already exists with a different ID
                         // Look up that user's ID and use it instead
-                        let existing_user: Option<ExistingUserRow> = sqlx::query_as(
-                            "SELECT id FROM users WHERE org_id = $1 AND email = $2"
-                        )
-                        .bind(membership.org_id)
-                        .bind(email_str)
-                        .fetch_optional(pool)
-                        .await?;
+                        let existing_user: Option<ExistingUserRow> =
+                            sqlx::query_as("SELECT id FROM users WHERE org_id = $1 AND email = $2")
+                                .bind(membership.org_id)
+                                .bind(email_str)
+                                .fetch_optional(pool)
+                                .await?;
 
                         if let Some(existing) = existing_user {
                             tracing::info!(
@@ -721,12 +731,11 @@ async fn ensure_oauth_user_exists(
     // No org membership - check if there's an existing user with this email
     // This handles the case where an OAuth user logs in but their record was created differently
     if let Some(email_str) = email {
-        let existing_user: Option<ExistingUserWithOrgRow> = sqlx::query_as(
-            "SELECT id, org_id FROM users WHERE email = $1"
-        )
-        .bind(email_str)
-        .fetch_optional(pool)
-        .await?;
+        let existing_user: Option<ExistingUserWithOrgRow> =
+            sqlx::query_as("SELECT id, org_id FROM users WHERE email = $1")
+                .bind(email_str)
+                .fetch_optional(pool)
+                .await?;
 
         if let Some(existing) = existing_user {
             tracing::info!(
@@ -739,7 +748,7 @@ async fn ensure_oauth_user_exists(
 
             // Get the user's role from their org membership, or default to "member"
             let role: String = sqlx::query_scalar(
-                "SELECT role FROM organization_members WHERE user_id = $1 AND org_id = $2"
+                "SELECT role FROM organization_members WHERE user_id = $1 AND org_id = $2",
             )
             .bind(existing.id)
             .bind(existing.org_id)
@@ -764,7 +773,7 @@ async fn ensure_oauth_user_exists(
         r#"
         INSERT INTO organizations (id, name, subscription_tier, created_at, updated_at)
         VALUES ($1, $2, 'free', NOW(), NOW())
-        "#
+        "#,
     )
     .bind(org_id)
     .bind(&org_name)
@@ -772,15 +781,15 @@ async fn ensure_oauth_user_exists(
     .await?;
 
     // SOC 2 CC6.1: Generate cryptographically random hash for OAuth users
-    let impossible_hash = password::generate_impossible_hash()
-        .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+    let impossible_hash =
+        password::generate_impossible_hash().map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
 
     // Create user record with org_id and required NOT NULL columns
     sqlx::query(
         r#"
         INSERT INTO users (id, email, password_hash, org_id, role, created_at, updated_at)
         VALUES ($1, $2, $3, $4, 'member', NOW(), NOW())
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(email.unwrap_or("oauth@placeholder.local"))
@@ -794,7 +803,7 @@ async fn ensure_oauth_user_exists(
         r#"
         INSERT INTO organization_members (id, org_id, user_id, role, created_at)
         VALUES ($1, $2, $3, 'owner', NOW())
-        "#
+        "#,
     )
     .bind(Uuid::new_v4())
     .bind(org_id)
@@ -852,7 +861,7 @@ async fn authenticate_api_key(
         JOIN organizations o ON o.id = ak.org_id
         WHERE ak.key_hash = $1
           AND (ak.expires_at IS NULL OR ak.expires_at > NOW())
-        "#
+        "#,
     )
     .bind(&key_hash)
     .fetch_optional(&auth_state.pool)
@@ -916,11 +925,11 @@ fn log_api_key_failure(
                 ip_address, user_agent, metadata, auth_method
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            "#
+            "#,
         )
         .bind(None::<Uuid>)
-        .bind("unknown")  // email required by schema
-        .bind("login_failed")  // matches CHECK constraint
+        .bind("unknown") // email required by schema
+        .bind("login_failed") // matches CHECK constraint
         .bind("warning")
         .bind(ip_address)
         .bind(user_agent)
@@ -955,12 +964,21 @@ impl IntoResponse for AuthError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             AuthError::MissingAuth => (StatusCode::UNAUTHORIZED, "Authentication required"),
-            AuthError::InvalidAuthFormat => (StatusCode::UNAUTHORIZED, "Invalid authentication format"),
+            AuthError::InvalidAuthFormat => {
+                (StatusCode::UNAUTHORIZED, "Invalid authentication format")
+            }
             AuthError::InvalidToken => (StatusCode::UNAUTHORIZED, "Invalid or expired token"),
             AuthError::InvalidApiKey => (StatusCode::UNAUTHORIZED, "Invalid API key"),
-            AuthError::InsufficientPermissions => (StatusCode::FORBIDDEN, "Insufficient permissions"),
-            AuthError::NoOrganization => (StatusCode::BAD_REQUEST, "No organization found. Please create an organization first."),
-            AuthError::DatabaseError => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
+            AuthError::InsufficientPermissions => {
+                (StatusCode::FORBIDDEN, "Insufficient permissions")
+            }
+            AuthError::NoOrganization => (
+                StatusCode::BAD_REQUEST,
+                "No organization found. Please create an organization first.",
+            ),
+            AuthError::DatabaseError => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            }
             AuthError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
         };
 
@@ -999,14 +1017,13 @@ pub async fn require_billing_active(
             }
 
             // Check if org is blocked
-            let billing_status: Option<BillingStatusRow> = sqlx::query_as(
-                "SELECT billing_blocked_at FROM organizations WHERE id = $1"
-            )
-            .bind(org_id)
-            .fetch_optional(&auth_state.pool)
-            .await
-            .ok()
-            .flatten();
+            let billing_status: Option<BillingStatusRow> =
+                sqlx::query_as("SELECT billing_blocked_at FROM organizations WHERE id = $1")
+                    .bind(org_id)
+                    .fetch_optional(&auth_state.pool)
+                    .await
+                    .ok()
+                    .flatten();
 
             if let Some(status) = billing_status {
                 if status.billing_blocked_at.is_some() {
@@ -1095,14 +1112,13 @@ pub async fn require_auth_with_billing(
 
         // Skip billing check for billing endpoints (so users can pay their invoices)
         if !is_billing_endpoint(path) {
-            let billing_status: Option<BillingStatusRow> = sqlx::query_as(
-                "SELECT billing_blocked_at FROM organizations WHERE id = $1"
-            )
-            .bind(org_id)
-            .fetch_optional(&auth_state.pool)
-            .await
-            .ok()
-            .flatten();
+            let billing_status: Option<BillingStatusRow> =
+                sqlx::query_as("SELECT billing_blocked_at FROM organizations WHERE id = $1")
+                    .bind(org_id)
+                    .fetch_optional(&auth_state.pool)
+                    .await
+                    .ok()
+                    .flatten();
 
             if let Some(status) = billing_status {
                 if status.billing_blocked_at.is_some() {
@@ -1149,7 +1165,7 @@ pub async fn require_active_member(
                 SELECT status
                 FROM organization_members
                 WHERE user_id = $1 AND org_id = $2
-                "#
+                "#,
             )
             .bind(user_id)
             .bind(org_id)
@@ -1249,14 +1265,13 @@ pub async fn require_full_access(
     if let Some(org_id) = auth_user.org_id {
         // Skip billing check for billing endpoints
         if !is_billing_endpoint(&path) {
-            let billing_status: Option<BillingStatusRow> = sqlx::query_as(
-                "SELECT billing_blocked_at FROM organizations WHERE id = $1"
-            )
-            .bind(org_id)
-            .fetch_optional(&auth_state.pool)
-            .await
-            .ok()
-            .flatten();
+            let billing_status: Option<BillingStatusRow> =
+                sqlx::query_as("SELECT billing_blocked_at FROM organizations WHERE id = $1")
+                    .bind(org_id)
+                    .fetch_optional(&auth_state.pool)
+                    .await
+                    .ok()
+                    .flatten();
 
             if let Some(status) = billing_status {
                 if status.billing_blocked_at.is_some() {
@@ -1270,7 +1285,7 @@ pub async fn require_full_access(
             // Skip check for billing/readonly endpoints
             if !is_billing_endpoint(&path) && !is_readonly_endpoint(&path) {
                 let member_status: Option<MemberStatusRow> = sqlx::query_as(
-                    "SELECT status FROM organization_members WHERE user_id = $1 AND org_id = $2"
+                    "SELECT status FROM organization_members WHERE user_id = $1 AND org_id = $2",
                 )
                 .bind(user_id)
                 .bind(org_id)

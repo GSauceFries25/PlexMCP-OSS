@@ -155,7 +155,9 @@ mod tests {
         let state = WebSocketState::new();
         let (tx, _rx) = mpsc::unbounded_channel();
 
-        state.add_connection(Connection::new(Uuid::new_v4(), tx)).await;
+        state
+            .add_connection(Connection::new(Uuid::new_v4(), tx))
+            .await;
 
         let stats = state.get_stats().await;
         assert_eq!(stats.active_connections, 1);

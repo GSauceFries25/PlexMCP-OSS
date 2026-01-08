@@ -137,7 +137,8 @@ mod totp_tests {
 
         // Verify uppercase without hyphen
         let upper_no_hyphen = code.replace('-', "").to_uppercase();
-        assert!(verify_backup_code(&upper_no_hyphen, &hash).expect("Should verify uppercase without hyphen"));
+        assert!(verify_backup_code(&upper_no_hyphen, &hash)
+            .expect("Should verify uppercase without hyphen"));
     }
 
     // =========================================================================
@@ -153,12 +154,12 @@ mod totp_tests {
 
         // Test codes with different numbers of matching digits
         let test_codes = [
-            "000000", // 0 matching (probably)
+            "000000",                               // 0 matching (probably)
             &format!("{}00000", &valid_code[0..1]), // 1 matching
-            &format!("{}0000", &valid_code[0..2]), // 2 matching
-            &format!("{}000", &valid_code[0..3]), // 3 matching
-            &format!("{}00", &valid_code[0..4]), // 4 matching
-            &format!("{}0", &valid_code[0..5]), // 5 matching
+            &format!("{}0000", &valid_code[0..2]),  // 2 matching
+            &format!("{}000", &valid_code[0..3]),   // 3 matching
+            &format!("{}00", &valid_code[0..4]),    // 4 matching
+            &format!("{}0", &valid_code[0..5]),     // 5 matching
         ];
 
         // All wrong codes should return false regardless of matching prefix
@@ -174,7 +175,10 @@ mod totp_tests {
     // =========================================================================
     #[test]
     fn test_device_token_expiry_days() {
-        assert_eq!(TRUSTED_DEVICE_EXPIRY_DAYS, 30, "Device token should expire after 30 days");
+        assert_eq!(
+            TRUSTED_DEVICE_EXPIRY_DAYS, 30,
+            "Device token should expire after 30 days"
+        );
     }
 
     // =========================================================================
@@ -183,7 +187,11 @@ mod totp_tests {
     #[test]
     fn test_backup_code_count() {
         let codes = generate_backup_codes();
-        assert_eq!(codes.len(), BACKUP_CODE_COUNT, "Should generate exactly BACKUP_CODE_COUNT codes");
+        assert_eq!(
+            codes.len(),
+            BACKUP_CODE_COUNT,
+            "Should generate exactly BACKUP_CODE_COUNT codes"
+        );
         assert_eq!(BACKUP_CODE_COUNT, 10, "BACKUP_CODE_COUNT should be 10");
     }
 
@@ -198,14 +206,20 @@ mod totp_tests {
             assert_eq!(&code[5..6], "-", "Code should have hyphen at position 5");
 
             // First 5 chars should be from charset (alphanumeric, no ambiguous)
-            assert!(code[..5].chars().all(|c| {
-                c.is_ascii_lowercase() || (c.is_ascii_digit() && c != '0' && c != '1')
-            }), "First 5 chars should be valid charset");
+            assert!(
+                code[..5].chars().all(|c| {
+                    c.is_ascii_lowercase() || (c.is_ascii_digit() && c != '0' && c != '1')
+                }),
+                "First 5 chars should be valid charset"
+            );
 
             // Last 5 chars should be from charset
-            assert!(code[6..].chars().all(|c| {
-                c.is_ascii_lowercase() || (c.is_ascii_digit() && c != '0' && c != '1')
-            }), "Last 5 chars should be valid charset");
+            assert!(
+                code[6..].chars().all(|c| {
+                    c.is_ascii_lowercase() || (c.is_ascii_digit() && c != '0' && c != '1')
+                }),
+                "Last 5 chars should be valid charset"
+            );
         }
     }
 
@@ -352,7 +366,11 @@ mod jwt_tests {
     fn test_access_token_expiry_hours() {
         let jwt = JwtManager::new(TEST_SECRET, 24);
         let expiry_seconds = jwt.access_token_expiry_seconds();
-        assert_eq!(expiry_seconds, 24 * 3600, "Access token should expire in 24 hours");
+        assert_eq!(
+            expiry_seconds,
+            24 * 3600,
+            "Access token should expire in 24 hours"
+        );
     }
 
     // =========================================================================
@@ -369,7 +387,9 @@ mod jwt_tests {
             .expect("Should generate tokens");
 
         // Validate refresh token is valid (meaning exp is at least 30 days out)
-        let claims = jwt.validate_refresh_token(&refresh_token).expect("Should be valid");
+        let claims = jwt
+            .validate_refresh_token(&refresh_token)
+            .expect("Should be valid");
         let now = OffsetDateTime::now_utc().unix_timestamp();
         let exp = claims.exp;
 
@@ -394,7 +414,10 @@ mod jwt_tests {
             .generate_token_pair(user_id, org_id, "owner", "test@example.com")
             .expect("Should generate tokens");
 
-        assert_ne!(access_jti, refresh_jti, "Access and refresh JTIs must be different");
+        assert_ne!(
+            access_jti, refresh_jti,
+            "Access and refresh JTIs must be different"
+        );
     }
 
     // =========================================================================
@@ -430,7 +453,11 @@ mod api_key_tests {
         let manager = ApiKeyManager::new(TEST_SECRET);
         let (key, _hash, _prefix) = manager.generate_key().expect("Should generate key");
 
-        assert_eq!(key.len(), API_KEY_TOTAL_LENGTH, "Key should be 87 characters");
+        assert_eq!(
+            key.len(),
+            API_KEY_TOTAL_LENGTH,
+            "Key should be 87 characters"
+        );
     }
 
     // =========================================================================
@@ -443,7 +470,9 @@ mod api_key_tests {
 
         // Truncate key to 86 chars
         let short_key = &key[..86];
-        let result = manager.validate_key(short_key).expect("Validation should not error");
+        let result = manager
+            .validate_key(short_key)
+            .expect("Validation should not error");
         assert!(!result, "86-char key should be invalid");
     }
 
@@ -461,7 +490,9 @@ mod api_key_tests {
         modified.pop();
         modified.push(last_char);
 
-        let result = manager.validate_key(&modified).expect("Validation should not error");
+        let result = manager
+            .validate_key(&modified)
+            .expect("Validation should not error");
         assert!(!result, "Modified signature should fail validation");
     }
 
@@ -500,14 +531,21 @@ mod api_key_tests {
 
         // Valid key should pass format validation
         let (key, _, _) = manager.generate_key().expect("Should generate key");
-        assert!(manager.validate_key(&key).expect("Should not error"), "Valid key should pass");
+        assert!(
+            manager.validate_key(&key).expect("Should not error"),
+            "Valid key should pass"
+        );
 
         // Invalid prefix should fail
-        let invalid_prefix = "xxxx_" .to_string() + &key[5..];
-        assert!(!manager.validate_key(&invalid_prefix).expect("Should not error"));
+        let invalid_prefix = "xxxx_".to_string() + &key[5..];
+        assert!(!manager
+            .validate_key(&invalid_prefix)
+            .expect("Should not error"));
 
         // Wrong length should fail
-        assert!(!manager.validate_key("pmcp_short").expect("Should not error"));
+        assert!(!manager
+            .validate_key("pmcp_short")
+            .expect("Should not error"));
     }
 
     // =========================================================================

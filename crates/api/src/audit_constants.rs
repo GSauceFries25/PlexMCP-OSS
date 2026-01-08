@@ -285,7 +285,14 @@ mod tests {
             event_type::ADMIN_ACTION,
             event_type::CONFIGURATION,
         ];
-        let unique_count = event_types.iter().collect::<std::collections::HashSet<_>>().len();
-        assert_eq!(event_types.len(), unique_count, "Event types must be unique");
+        let unique_count = event_types
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len();
+        assert_eq!(
+            event_types.len(),
+            unique_count,
+            "Event types must be unique"
+        );
     }
 }

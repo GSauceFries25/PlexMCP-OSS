@@ -362,7 +362,11 @@ pub struct SubscriptionService {
 impl SubscriptionService {
     pub fn new(stripe: StripeClient, pool: PgPool) -> Self {
         let event_logger = BillingEventLogger::new(pool.clone());
-        Self { stripe, pool, event_logger }
+        Self {
+            stripe,
+            pool,
+            event_logger,
+        }
     }
 
     /// Get the Stripe client for config access
@@ -415,12 +419,15 @@ impl SubscriptionService {
         }
 
         // Start a transaction for atomic updates
-        let mut tx = self.pool.begin().await
+        let mut tx = self
+            .pool
+            .begin()
+            .await
             .map_err(|e| BillingError::Database(e.to_string()))?;
 
         // Get current state with row lock (FOR UPDATE)
         let current: Option<(String, i64)> = sqlx::query_as(
-            "SELECT subscription_tier, tier_version FROM organizations WHERE id = $1 FOR UPDATE"
+            "SELECT subscription_tier, tier_version FROM organizations WHERE id = $1 FOR UPDATE",
         )
         .bind(org_id)
         .fetch_optional(&mut *tx)
@@ -432,15 +439,20 @@ impl SubscriptionService {
 
         // Check if this is a downgrade
         let is_downgrade = self.is_tier_downgrade(&current_tier, new_tier);
-        let downgrade_timing = options.downgrade_timing.as_deref().unwrap_or(
-            if is_downgrade { "end_of_period" } else { "immediate" }
-        );
+        let downgrade_timing = options
+            .downgrade_timing
+            .as_deref()
+            .unwrap_or(if is_downgrade {
+                "end_of_period"
+            } else {
+                "immediate"
+            });
 
         // If this is a scheduled downgrade (end of period), record it and return
         if is_downgrade && downgrade_timing == "end_of_period" {
             // Check if there's already a scheduled downgrade (prevents silent overwrites)
             let existing_scheduled: Option<(Option<String>,)> = sqlx::query_as(
-                "SELECT scheduled_downgrade_tier FROM subscriptions WHERE org_id = $1"
+                "SELECT scheduled_downgrade_tier FROM subscriptions WHERE org_id = $1",
             )
             .bind(org_id)
             .fetch_optional(&mut *tx)
@@ -460,7 +472,7 @@ impl SubscriptionService {
 
             // Get current period end from subscription
             let period_end: Option<OffsetDateTime> = sqlx::query_scalar(
-                "SELECT current_period_end FROM subscriptions WHERE org_id = $1"
+                "SELECT current_period_end FROM subscriptions WHERE org_id = $1",
             )
             .bind(org_id)
             .fetch_optional(&mut *tx)
@@ -481,7 +493,7 @@ impl SubscriptionService {
                     admin_downgrade_reason = $5,
                     updated_at = NOW()
                 WHERE org_id = $6
-                "#
+                "#,
             )
             .bind(new_tier)
             .bind(effective_date)
@@ -503,9 +515,12 @@ impl SubscriptionService {
                 options.changed_by,
                 &options,
                 true, // scheduled
-            ).await?;
+            )
+            .await?;
 
-            tx.commit().await.map_err(|e| BillingError::Database(e.to_string()))?;
+            tx.commit()
+                .await
+                .map_err(|e| BillingError::Database(e.to_string()))?;
 
             tracing::info!(
                 org_id = %org_id,
@@ -521,16 +536,20 @@ impl SubscriptionService {
                 TierChangeSource::UserUpgrade | TierChangeSource::UserDowngrade => ActorType::User,
                 _ => ActorType::System,
             };
-            if let Err(e) = self.event_logger.log_event(
-                BillingEventBuilder::new(org_id, BillingEventType::TierChangeScheduled)
-                    .data(serde_json::json!({
-                        "from_tier": current_tier,
-                        "to_tier": new_tier,
-                        "effective_date": effective_date.to_string(),
-                        "is_downgrade": true,
-                    }))
-                    .actor_opt(options.changed_by, actor_type)
-            ).await {
+            if let Err(e) = self
+                .event_logger
+                .log_event(
+                    BillingEventBuilder::new(org_id, BillingEventType::TierChangeScheduled)
+                        .data(serde_json::json!({
+                            "from_tier": current_tier,
+                            "to_tier": new_tier,
+                            "effective_date": effective_date.to_string(),
+                            "is_downgrade": true,
+                        }))
+                        .actor_opt(options.changed_by, actor_type),
+                )
+                .await
+            {
                 tracing::warn!(error = %e, "Failed to log scheduled tier change event");
             }
 
@@ -557,7 +576,7 @@ impl SubscriptionService {
                 tier_changed_at = NOW(),
                 updated_at = NOW()
             WHERE id = $4 AND tier_version = $5
-            "#
+            "#,
         )
         .bind(new_tier)
         .bind(source.as_str())
@@ -572,7 +591,7 @@ impl SubscriptionService {
         if rows_affected == 0 {
             // Optimistic lock failed - someone else modified the row
             return Err(BillingError::ConcurrentModification(
-                "Tier was modified by another process. Please retry.".to_string()
+                "Tier was modified by another process. Please retry.".to_string(),
             ));
         }
 
@@ -593,7 +612,7 @@ impl SubscriptionService {
                 scheduled_downgrade_at = NULL,
                 scheduled_downgrade_processing = false
             WHERE org_id = $1
-            "#
+            "#,
         )
         .bind(org_id)
         .execute(&mut *tx)
@@ -610,9 +629,12 @@ impl SubscriptionService {
             options.changed_by,
             &options,
             false, // not scheduled
-        ).await?;
+        )
+        .await?;
 
-        tx.commit().await.map_err(|e| BillingError::Database(e.to_string()))?;
+        tx.commit()
+            .await
+            .map_err(|e| BillingError::Database(e.to_string()))?;
 
         tracing::info!(
             org_id = %org_id,
@@ -629,16 +651,20 @@ impl SubscriptionService {
             _ => ActorType::System,
         };
         let is_downgrade = self.is_tier_downgrade(&current_tier, new_tier);
-        if let Err(e) = self.event_logger.log_event(
-            BillingEventBuilder::new(org_id, BillingEventType::TierChanged)
-                .data(serde_json::json!({
-                    "from_tier": current_tier,
-                    "to_tier": new_tier,
-                    "is_downgrade": is_downgrade,
-                    "source": source.as_str(),
-                }))
-                .actor_opt(options.changed_by, actor_type)
-        ).await {
+        if let Err(e) = self
+            .event_logger
+            .log_event(
+                BillingEventBuilder::new(org_id, BillingEventType::TierChanged)
+                    .data(serde_json::json!({
+                        "from_tier": current_tier,
+                        "to_tier": new_tier,
+                        "is_downgrade": is_downgrade,
+                        "source": source.as_str(),
+                    }))
+                    .actor_opt(options.changed_by, actor_type),
+            )
+            .await
+        {
             tracing::warn!(error = %e, "Failed to log tier change event");
         }
 
@@ -692,7 +718,7 @@ impl SubscriptionService {
             INSERT INTO tier_change_audit
                 (org_id, from_tier, to_tier, source, changed_by, reason, metadata)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(from_tier)
@@ -719,10 +745,14 @@ impl SubscriptionService {
         customer_id: &str,
         tier: &str,
     ) -> BillingResult<Subscription> {
-        let price_id = self.stripe.config().price_id_for_tier(tier)
+        let price_id = self
+            .stripe
+            .config()
+            .price_id_for_tier(tier)
             .ok_or_else(|| BillingError::InvalidTier(tier.to_string()))?;
 
-        let customer_id = customer_id.parse::<CustomerId>()
+        let customer_id = customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
         let mut metadata = std::collections::HashMap::new();
@@ -759,11 +789,18 @@ impl SubscriptionService {
         org_id: Uuid,
         customer_id: &str,
     ) -> BillingResult<Subscription> {
-        let price_id = self.stripe.config().price_ids.addon_only
+        let price_id = self
+            .stripe
+            .config()
+            .price_ids
+            .addon_only
             .as_ref()
-            .ok_or_else(|| BillingError::Config("STRIPE_PRICE_ADDON_ONLY not configured".to_string()))?;
+            .ok_or_else(|| {
+                BillingError::Config("STRIPE_PRICE_ADDON_ONLY not configured".to_string())
+            })?;
 
-        let customer_id = customer_id.parse::<CustomerId>()
+        let customer_id = customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
         let mut metadata = std::collections::HashMap::new();
@@ -801,13 +838,18 @@ impl SubscriptionService {
     ) -> BillingResult<Subscription> {
         let sub_id = self.get_subscription_id(org_id).await?;
 
-        let price_id = self.stripe.config().price_id_for_tier(new_tier)
+        let price_id = self
+            .stripe
+            .config()
+            .price_id_for_tier(new_tier)
             .ok_or_else(|| BillingError::InvalidTier(new_tier.to_string()))?;
 
         // Get current subscription to get the item ID
         let current = Subscription::retrieve(self.stripe.inner(), &sub_id, &[]).await?;
 
-        let item_id = current.items.data
+        let item_id = current
+            .items
+            .data
             .first()
             .map(|item| item.id.to_string())
             .ok_or_else(|| BillingError::Internal("No subscription items found".to_string()))?;
@@ -828,13 +870,15 @@ impl SubscriptionService {
             ..Default::default()
         };
 
-        let subscription = Subscription::update(self.stripe.inner(), &sub_id, params).await
+        let subscription = Subscription::update(self.stripe.inner(), &sub_id, params)
+            .await
             .map_err(|e| {
                 // Check if this is a payment method required error from Stripe
                 let err_str = e.to_string();
-                if err_str.contains("no attached payment source") ||
-                   err_str.contains("no default payment method") ||
-                   err_str.contains("resource_missing") {
+                if err_str.contains("no attached payment source")
+                    || err_str.contains("no default payment method")
+                    || err_str.contains("resource_missing")
+                {
                     tracing::warn!(
                         org_id = %org_id,
                         error = %err_str,
@@ -879,17 +923,23 @@ impl SubscriptionService {
 
         // Get the appropriate price ID based on billing interval
         let price_id = if billing_interval == "annual" {
-            self.stripe.config().annual_price_id_for_tier(new_tier)
+            self.stripe
+                .config()
+                .annual_price_id_for_tier(new_tier)
                 .ok_or_else(|| BillingError::InvalidTier(format!("{} (annual)", new_tier)))?
         } else {
-            self.stripe.config().price_id_for_tier(new_tier)
+            self.stripe
+                .config()
+                .price_id_for_tier(new_tier)
                 .ok_or_else(|| BillingError::InvalidTier(new_tier.to_string()))?
         };
 
         // Get current subscription to get the item ID
         let current = Subscription::retrieve(self.stripe.inner(), &sub_id, &[]).await?;
 
-        let item_id = current.items.data
+        let item_id = current
+            .items
+            .data
             .first()
             .map(|item| item.id.to_string())
             .ok_or_else(|| BillingError::Internal("No subscription items found".to_string()))?;
@@ -911,7 +961,8 @@ impl SubscriptionService {
             ..Default::default()
         };
 
-        let subscription = Subscription::update(self.stripe.inner(), &sub_id, params).await
+        let subscription = Subscription::update(self.stripe.inner(), &sub_id, params)
+            .await
             .map_err(|e| BillingError::StripeApi(e.to_string()))?;
 
         // Update database
@@ -953,7 +1004,10 @@ impl SubscriptionService {
         tracing::info!(customer_id = %customer_id, "Got customer ID");
 
         // Get the new price ID
-        let new_price_id = self.stripe.config().price_id_for_tier(new_tier)
+        let new_price_id = self
+            .stripe
+            .config()
+            .price_id_for_tier(new_tier)
             .ok_or_else(|| BillingError::InvalidTier(new_tier.to_string()))?;
         tracing::info!(new_price_id = %new_price_id, "Got new price ID");
 
@@ -965,14 +1019,18 @@ impl SubscriptionService {
             "Retrieved current subscription"
         );
 
-        let item_id = current.items.data
+        let item_id = current
+            .items
+            .data
             .first()
             .map(|item| item.id.clone())
             .ok_or_else(|| BillingError::Internal("No subscription items found".to_string()))?;
         tracing::info!(item_id = %item_id, "Got subscription item ID");
 
         // Get current tier name from price
-        let current_tier = current.items.data
+        let current_tier = current
+            .items
+            .data
             .first()
             .and_then(|item| item.price.as_ref())
             .and_then(|price| self.stripe.config().tier_for_price_id(price.id.as_str()))
@@ -994,7 +1052,10 @@ impl SubscriptionService {
             ("subscription", sub_id.as_ref()),
             ("subscription_details[items][0][id]", item_id.as_ref()),
             ("subscription_details[items][0][price]", new_price_id),
-            ("subscription_details[proration_behavior]", "create_prorations"),
+            (
+                "subscription_details[proration_behavior]",
+                "create_prorations",
+            ),
         ];
 
         let client = reqwest::Client::new();
@@ -1016,18 +1077,16 @@ impl SubscriptionService {
             );
             return Err(BillingError::StripeApi(format!(
                 "Stripe API error ({}): {}",
-                status,
-                error_body
+                status, error_body
             )));
         }
 
-        let upcoming_invoice: serde_json::Value = response.json().await
-            .map_err(|e| BillingError::StripeApi(format!("Failed to parse Stripe response: {}", e)))?;
+        let upcoming_invoice: serde_json::Value = response.json().await.map_err(|e| {
+            BillingError::StripeApi(format!("Failed to parse Stripe response: {}", e))
+        })?;
 
         // Extract amount_due from the response
-        let total_amount = upcoming_invoice["amount_due"]
-            .as_i64()
-            .unwrap_or(0);
+        let total_amount = upcoming_invoice["amount_due"].as_i64().unwrap_or(0);
 
         // Get pending overages from database (includes abandoned Pay Now checkouts)
         let pending_overages: Option<(Option<i64>,)> = sqlx::query_as(
@@ -1035,15 +1094,13 @@ impl SubscriptionService {
             SELECT SUM(total_charge_cents)
             FROM overage_charges
             WHERE org_id = $1 AND status IN ('pending', 'awaiting_payment')
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
         .await?;
 
-        let overage_cents = pending_overages
-            .and_then(|(sum,)| sum)
-            .unwrap_or(0) as i64;
+        let overage_cents = pending_overages.and_then(|(sum,)| sum).unwrap_or(0) as i64;
 
         // Calculate period info
         let period_end = current.current_period_end;
@@ -1130,12 +1187,17 @@ impl SubscriptionService {
     ) -> BillingResult<ScheduledDowngrade> {
         // Validate the tier exists (skip for free tier which has no Stripe price)
         if new_tier != "free" {
-            let _price_id = self.stripe.config().price_id_for_tier(new_tier)
+            let _price_id = self
+                .stripe
+                .config()
+                .price_id_for_tier(new_tier)
                 .ok_or_else(|| BillingError::InvalidTier(new_tier.to_string()))?;
         }
 
         // Get current subscription to verify it exists and get period end
-        let subscription = self.get_subscription(org_id).await?
+        let subscription = self
+            .get_subscription(org_id)
+            .await?
             .ok_or_else(|| BillingError::SubscriptionNotFound(org_id.to_string()))?;
 
         // Get current tier from metadata or price - must be resolvable for downgrade scheduling
@@ -1187,7 +1249,7 @@ impl SubscriptionService {
                 scheduled_downgrade_at = NOW(),
                 updated_at = NOW()
             WHERE org_id = $2 AND status IN ('active', 'trialing', 'past_due')
-            "#
+            "#,
         )
         .bind(new_tier)
         .bind(org_id)
@@ -1246,7 +1308,7 @@ impl SubscriptionService {
                 admin_downgrade_billing_interval = $4,
                 updated_at = NOW()
             WHERE org_id = $5 AND scheduled_downgrade_tier IS NOT NULL
-            "#
+            "#,
         )
         .bind(params.admin_user_id)
         .bind(&params.reason)
@@ -1257,7 +1319,9 @@ impl SubscriptionService {
         .await?;
 
         // 3. Get current subscription for response
-        let subscription = self.get_subscription(org_id).await?
+        let subscription = self
+            .get_subscription(org_id)
+            .await?
             .ok_or_else(|| BillingError::SubscriptionNotFound(org_id.to_string()))?;
 
         // Extract customer ID from Expandable<Customer>
@@ -1270,12 +1334,14 @@ impl SubscriptionService {
         Ok(AdminTierChangeResult {
             stripe_subscription_id: Some(subscription.id.to_string()),
             stripe_customer_id: customer_id,
-            tier: scheduled.current_tier.clone(),  // Still on CURRENT tier
+            tier: scheduled.current_tier.clone(), // Still on CURRENT tier
             trial_end: None,
             stripe_invoice_id: None,
             invoice_status: None,
             subscription_start_date: None,
-            billing_interval: params.billing_interval.unwrap_or_else(|| "monthly".to_string()),
+            billing_interval: params
+                .billing_interval
+                .unwrap_or_else(|| "monthly".to_string()),
             custom_price_id: None,
             scheduled: true,
             scheduled_effective_date: Some(scheduled.effective_date),
@@ -1284,8 +1350,7 @@ impl SubscriptionService {
             refund_type: None,
             message: format!(
                 "Downgrade to {} scheduled for end of billing period ({})",
-                params.new_tier,
-                scheduled.effective_date
+                params.new_tier, scheduled.effective_date
             ),
         })
     }
@@ -1298,34 +1363,47 @@ impl SubscriptionService {
         params: AdminTierChangeParams,
     ) -> BillingResult<AdminTierChangeResult> {
         // 1. Get current subscription
-        let subscription = self.get_subscription(org_id).await?
+        let subscription = self
+            .get_subscription(org_id)
+            .await?
             .ok_or_else(|| BillingError::SubscriptionNotFound(org_id.to_string()))?;
 
         // 2. Get the price ID for the new tier
-        let billing_interval = params.billing_interval.clone().unwrap_or_else(|| "monthly".to_string());
-        let price_id = if let (true, Some(custom_price)) = (params.new_tier == "enterprise", params.custom_price_cents) {
+        let billing_interval = params
+            .billing_interval
+            .clone()
+            .unwrap_or_else(|| "monthly".to_string());
+        let price_id = if let (true, Some(custom_price)) =
+            (params.new_tier == "enterprise", params.custom_price_cents)
+        {
             // Create custom price for Enterprise
-            self.create_custom_enterprise_price(
-                custom_price,
-                &billing_interval,
-                org_id,
-            ).await?
+            self.create_custom_enterprise_price(custom_price, &billing_interval, org_id)
+                .await?
         } else if billing_interval == "annual" {
             // Use annual price
-            self.stripe.config().annual_price_id_for_tier(&params.new_tier)
-                .ok_or_else(|| BillingError::InvalidTier(format!(
-                    "No annual price for tier: {}", params.new_tier
-                )))?
+            self.stripe
+                .config()
+                .annual_price_id_for_tier(&params.new_tier)
+                .ok_or_else(|| {
+                    BillingError::InvalidTier(format!(
+                        "No annual price for tier: {}",
+                        params.new_tier
+                    ))
+                })?
                 .to_string()
         } else {
             // Use monthly price
-            self.stripe.config().price_id_for_tier(&params.new_tier)
+            self.stripe
+                .config()
+                .price_id_for_tier(&params.new_tier)
                 .ok_or_else(|| BillingError::InvalidTier(params.new_tier.clone()))?
                 .to_string()
         };
 
         // 3. Get the subscription item ID
-        let item_id = subscription.items.data
+        let item_id = subscription
+            .items
+            .data
             .first()
             .map(|item| item.id.to_string())
             .ok_or_else(|| BillingError::Internal("No subscription items found".to_string()))?;
@@ -1350,11 +1428,10 @@ impl SubscriptionService {
             ..Default::default()
         };
 
-        let updated_subscription = Subscription::update(
-            self.stripe.inner(),
-            &subscription.id,
-            update_params
-        ).await.map_err(|e| BillingError::StripeApi(e.to_string()))?;
+        let updated_subscription =
+            Subscription::update(self.stripe.inner(), &subscription.id, update_params)
+                .await
+                .map_err(|e| BillingError::StripeApi(e.to_string()))?;
 
         // 5. Use consolidated change_tier() for DB update + audit logging
         // This ensures proper version locking and audit trail
@@ -1368,10 +1445,12 @@ impl SubscriptionService {
         };
 
         // change_tier handles: DB update, version increment, clear scheduled downgrade, audit log
-        self.change_tier(org_id, &params.new_tier, tier_options).await?;
+        self.change_tier(org_id, &params.new_tier, tier_options)
+            .await?;
 
         // 7. Sync subscription to database
-        self.sync_subscription_to_db(org_id, &updated_subscription).await?;
+        self.sync_subscription_to_db(org_id, &updated_subscription)
+            .await?;
 
         // Extract customer ID
         let customer_id = match &updated_subscription.customer {
@@ -1380,7 +1459,9 @@ impl SubscriptionService {
         };
 
         // Get current tier from subscription metadata for audit trail
-        let current_tier = subscription.metadata.get("tier")
+        let current_tier = subscription
+            .metadata
+            .get("tier")
             .cloned()
             .unwrap_or_else(|| {
                 tracing::warn!(
@@ -1393,7 +1474,10 @@ impl SubscriptionService {
 
         // Calculate and record the prorated credit for audit purposes
         let refund_service = RefundService::new(self.stripe.clone(), self.pool.clone());
-        let credit_amount: Option<i64> = match refund_service.get_refundable_charge(&subscription.id.to_string()).await {
+        let credit_amount: Option<i64> = match refund_service
+            .get_refundable_charge(&subscription.id.to_string())
+            .await
+        {
             Ok(charge) => {
                 let prorated = RefundService::calculate_prorated_amount(
                     charge.amount_cents,
@@ -1404,14 +1488,17 @@ impl SubscriptionService {
                 // Record the credit for audit trail (Stripe handles actual credit via prorations)
                 if prorated > 0 {
                     if let Some(admin_id) = params.admin_user_id {
-                        if let Err(e) = refund_service.record_credit(
-                            org_id,
-                            admin_id,
-                            prorated,
-                            &params.reason,
-                            &current_tier,
-                            &params.new_tier,
-                        ).await {
+                        if let Err(e) = refund_service
+                            .record_credit(
+                                org_id,
+                                admin_id,
+                                prorated,
+                                &params.reason,
+                                &current_tier,
+                                &params.new_tier,
+                            )
+                            .await
+                        {
                             tracing::warn!(
                                 org_id = %org_id,
                                 error = %e,
@@ -1456,12 +1543,16 @@ impl SubscriptionService {
             invoice_status: None,
             subscription_start_date: None,
             billing_interval,
-            custom_price_id: if params.new_tier == "enterprise" { Some(price_id) } else { None },
+            custom_price_id: if params.new_tier == "enterprise" {
+                Some(price_id)
+            } else {
+                None
+            },
             scheduled: false,
             scheduled_effective_date: None,
             refund_issued: credit_amount.map(|c| c > 0).unwrap_or(false),
             refund_amount_cents: credit_amount,
-            refund_type: Some("credit".to_string()),  // Using prorations = credit
+            refund_type: Some("credit".to_string()), // Using prorations = credit
             message: format!(
                 "Immediate downgrade to {} completed with prorated credit for unused time{}",
                 params.new_tier, credit_msg
@@ -1493,12 +1584,11 @@ impl SubscriptionService {
 
                 self.change_tier(org_id, "free", tier_options).await?;
 
-                let customer_id: Option<(Option<String>,)> = sqlx::query_as(
-                    "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-                )
-                .bind(org_id)
-                .fetch_optional(&self.pool)
-                .await?;
+                let customer_id: Option<(Option<String>,)> =
+                    sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                        .bind(org_id)
+                        .fetch_optional(&self.pool)
+                        .await?;
 
                 let customer_id = customer_id
                     .and_then(|(id,)| id)
@@ -1548,21 +1638,26 @@ impl SubscriptionService {
             // Add metadata for tracking
             let mut metadata = std::collections::HashMap::new();
             metadata.insert("scheduled_free_downgrade".to_string(), "true".to_string());
-            metadata.insert("admin_user_id".to_string(),
-                params.admin_user_id.map(|id| id.to_string()).unwrap_or_default());
+            metadata.insert(
+                "admin_user_id".to_string(),
+                params
+                    .admin_user_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_default(),
+            );
             metadata.insert("reason".to_string(), params.reason.clone());
             update_params.metadata = Some(metadata);
 
-            let updated = stripe::Subscription::update(
-                self.stripe.inner(),
-                &subscription_id,
-                update_params,
-            ).await?;
+            let updated =
+                stripe::Subscription::update(self.stripe.inner(), &subscription_id, update_params)
+                    .await?;
 
             // Get period end for the effective date
             let period_end = if updated.current_period_end > 0 {
-                Some(OffsetDateTime::from_unix_timestamp(updated.current_period_end)
-                    .unwrap_or_else(|_| OffsetDateTime::now_utc()))
+                Some(
+                    OffsetDateTime::from_unix_timestamp(updated.current_period_end)
+                        .unwrap_or_else(|_| OffsetDateTime::now_utc()),
+                )
             } else {
                 None
             };
@@ -1575,7 +1670,7 @@ impl SubscriptionService {
                     scheduled_downgrade_at = $2,
                     updated_at = NOW()
                 WHERE org_id = $1
-                "#
+                "#,
             )
             .bind(org_id)
             .bind(period_end)
@@ -1593,7 +1688,7 @@ impl SubscriptionService {
             return Ok(AdminTierChangeResult {
                 stripe_subscription_id: Some(subscription_id.to_string()),
                 stripe_customer_id: customer_id,
-                tier: current_tier.to_string(),  // Still on current tier until period end
+                tier: current_tier.to_string(), // Still on current tier until period end
                 trial_end: None,
                 stripe_invoice_id: None,
                 invoice_status: None,
@@ -1661,14 +1756,21 @@ impl SubscriptionService {
         self.clear_accumulated_overages(org_id).await?;
 
         // Process refund/credit if requested and subscription wasn't already canceled
-        let (refund_issued, refund_amount_cents): (bool, Option<i64>) = if params.refund_type.is_some() && !subscription_already_canceled {
+        let (refund_issued, refund_amount_cents): (bool, Option<i64>) = if params
+            .refund_type
+            .is_some()
+            && !subscription_already_canceled
+        {
             let refund_service = RefundService::new(self.stripe.clone(), self.pool.clone());
             let admin_user_id = params.admin_user_id.ok_or_else(|| {
                 BillingError::Internal("Admin user ID required for refund".to_string())
             })?;
 
             // Try to get the refundable charge (using saved subscription ID)
-            match refund_service.get_refundable_charge(&original_subscription_id).await {
+            match refund_service
+                .get_refundable_charge(&original_subscription_id)
+                .await
+            {
                 Ok(charge) => {
                     // Calculate prorated amount
                     let prorated_amount = RefundService::calculate_prorated_amount(
@@ -1682,16 +1784,19 @@ impl SubscriptionService {
 
                         if refund_type == "refund" {
                             // Issue actual refund to payment method
-                            match refund_service.issue_refund(
-                                org_id,
-                                admin_user_id,
-                                &charge.charge_id,
-                                &charge.invoice_id,
-                                prorated_amount,
-                                &params.reason,
-                                current_tier,
-                                "free",
-                            ).await {
+                            match refund_service
+                                .issue_refund(
+                                    org_id,
+                                    admin_user_id,
+                                    &charge.charge_id,
+                                    &charge.invoice_id,
+                                    prorated_amount,
+                                    &params.reason,
+                                    current_tier,
+                                    "free",
+                                )
+                                .await
+                            {
                                 Ok(result) => {
                                     tracing::info!(
                                         org_id = %org_id,
@@ -1712,14 +1817,17 @@ impl SubscriptionService {
                             }
                         } else {
                             // Record credit (prorations already handled by Stripe during cancel)
-                            match refund_service.record_credit(
-                                org_id,
-                                admin_user_id,
-                                prorated_amount,
-                                &params.reason,
-                                current_tier,
-                                "free",
-                            ).await {
+                            match refund_service
+                                .record_credit(
+                                    org_id,
+                                    admin_user_id,
+                                    prorated_amount,
+                                    &params.reason,
+                                    current_tier,
+                                    "free",
+                                )
+                                .await
+                            {
                                 Ok(_) => {
                                     tracing::info!(
                                         org_id = %org_id,
@@ -1789,11 +1897,22 @@ impl SubscriptionService {
                 "Subscription was already canceled, organization set to Free tier".to_string()
             } else {
                 let refund_msg = match (refund_issued, refund_amount_cents) {
-                    (true, Some(amount)) => format!(" (${:.2} {} issued)", amount as f64 / 100.0, params.refund_type.as_deref().unwrap_or("credit")),
+                    (true, Some(amount)) => format!(
+                        " (${:.2} {} issued)",
+                        amount as f64 / 100.0,
+                        params.refund_type.as_deref().unwrap_or("credit")
+                    ),
                     (false, Some(0)) => " (no prorated amount due)".to_string(),
-                    _ => params.refund_type.as_ref().map(|t| format!(" ({} requested)", t)).unwrap_or_default(),
+                    _ => params
+                        .refund_type
+                        .as_ref()
+                        .map(|t| format!(" ({} requested)", t))
+                        .unwrap_or_default(),
                 };
-                format!("Subscription cancelled, downgraded to Free tier immediately{}", refund_msg)
+                format!(
+                    "Subscription cancelled, downgraded to Free tier immediately{}",
+                    refund_msg
+                )
             },
         })
     }
@@ -1807,14 +1926,16 @@ impl SubscriptionService {
                 scheduled_downgrade_at = NULL,
                 updated_at = NOW()
             WHERE org_id = $1 AND scheduled_downgrade_tier IS NOT NULL
-            "#
+            "#,
         )
         .bind(org_id)
         .execute(&self.pool)
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(BillingError::Internal("No scheduled downgrade to cancel".to_string()));
+            return Err(BillingError::Internal(
+                "No scheduled downgrade to cancel".to_string(),
+            ));
         }
 
         tracing::info!(
@@ -1826,12 +1947,15 @@ impl SubscriptionService {
     }
 
     /// Get scheduled downgrade info for an organization
-    pub async fn get_scheduled_downgrade(&self, org_id: Uuid) -> BillingResult<Option<ScheduledDowngrade>> {
+    pub async fn get_scheduled_downgrade(
+        &self,
+        org_id: Uuid,
+    ) -> BillingResult<Option<ScheduledDowngrade>> {
         #[derive(sqlx::FromRow)]
         #[allow(dead_code)]
         struct DowngradeRow {
             scheduled_downgrade_tier: Option<String>,
-            scheduled_downgrade_at: Option<time::OffsetDateTime>,  // Unused but fetched for potential future use
+            scheduled_downgrade_at: Option<time::OffsetDateTime>, // Unused but fetched for potential future use
             current_period_end: Option<time::OffsetDateTime>,
         }
 
@@ -1842,7 +1966,7 @@ impl SubscriptionService {
             WHERE org_id = $1 AND status IN ('active', 'trialing', 'past_due')
             ORDER BY created_at DESC
             LIMIT 1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -1851,12 +1975,11 @@ impl SubscriptionService {
         match result {
             Some(row) if row.scheduled_downgrade_tier.is_some() => {
                 // Get current tier from org
-                let current_tier: Option<(String,)> = sqlx::query_as(
-                    "SELECT subscription_tier FROM organizations WHERE id = $1"
-                )
-                .bind(org_id)
-                .fetch_optional(&self.pool)
-                .await?;
+                let current_tier: Option<(String,)> =
+                    sqlx::query_as("SELECT subscription_tier FROM organizations WHERE id = $1")
+                        .bind(org_id)
+                        .fetch_optional(&self.pool)
+                        .await?;
 
                 let current_tier = current_tier.map(|(t,)| t).ok_or_else(|| {
                     tracing::error!(
@@ -1864,7 +1987,7 @@ impl SubscriptionService {
                         "Organization has scheduled downgrade but no current tier in database"
                     );
                     BillingError::Database(
-                        "Cannot determine current tier for scheduled downgrade".to_string()
+                        "Cannot determine current tier for scheduled downgrade".to_string(),
                     )
                 })?;
 
@@ -1884,7 +2007,10 @@ impl SubscriptionService {
     ///
     /// Uses atomic claim pattern to prevent race conditions where admin cancels
     /// the downgrade while webhook is processing it.
-    pub async fn process_scheduled_downgrade(&self, org_id: Uuid) -> BillingResult<Option<Subscription>> {
+    pub async fn process_scheduled_downgrade(
+        &self,
+        org_id: Uuid,
+    ) -> BillingResult<Option<Subscription>> {
         // ATOMIC CLAIM: Try to atomically claim this downgrade for processing
         // This UPDATE...RETURNING pattern ensures only one process can claim it
         // If the claim succeeds (returns a row), we have exclusive processing rights
@@ -1910,7 +2036,7 @@ impl SubscriptionService {
                 admin_downgrade_scheduled,
                 admin_downgrade_custom_price_cents,
                 admin_downgrade_billing_interval
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -1932,12 +2058,11 @@ impl SubscriptionService {
         let custom_price = claimed.admin_downgrade_custom_price_cents;
 
         // Get current tier for logging
-        let current_tier: Option<String> = sqlx::query_scalar(
-            "SELECT subscription_tier FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let current_tier: Option<String> =
+            sqlx::query_scalar("SELECT subscription_tier FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         tracing::info!(
             org_id = %org_id,
@@ -1988,7 +2113,8 @@ impl SubscriptionService {
 
                 Ok(Some(sub))
             }
-        }.await;
+        }
+        .await;
 
         // ALWAYS clear the claim and scheduled downgrade, regardless of success/failure
         // This ensures we don't leave the subscription in a stuck "processing" state
@@ -2007,7 +2133,7 @@ impl SubscriptionService {
                 admin_downgrade_billing_interval = NULL,
                 updated_at = NOW()
             WHERE org_id = $1
-            "#
+            "#,
         )
         .bind(org_id)
         .execute(&self.pool)
@@ -2063,14 +2189,15 @@ impl SubscriptionService {
         };
 
         // Get current tier from organization
-        let current_tier: Option<(String,)> = sqlx::query_as(
-            "SELECT subscription_tier FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let current_tier: Option<(String,)> =
+            sqlx::query_as("SELECT subscription_tier FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
-        let current_tier = current_tier.map(|(t,)| t).unwrap_or_else(|| "free".to_string());
+        let current_tier = current_tier
+            .map(|(t,)| t)
+            .unwrap_or_else(|| "free".to_string());
         let current_order = tier_order(&current_tier);
         let new_order = tier_order(&params.new_tier);
 
@@ -2079,7 +2206,9 @@ impl SubscriptionService {
         if new_order < current_order {
             if params.new_tier == "free" {
                 // Free tier downgrade has its own handling
-                return self.admin_free_tier_downgrade(org_id, params, &current_tier).await;
+                return self
+                    .admin_free_tier_downgrade(org_id, params, &current_tier)
+                    .await;
             } else if params.downgrade_timing.as_deref() == Some("immediate") {
                 // Immediate downgrade with prorated credit/refund
                 tracing::info!(
@@ -2131,10 +2260,11 @@ impl SubscriptionService {
                     custom_price_id: None,
                     scheduled: false,
                     scheduled_effective_date: None,
-                    refund_issued: false,  // TODO: Integrate with RefundService for Free tier downgrades
+                    refund_issued: false, // TODO: Integrate with RefundService for Free tier downgrades
                     refund_amount_cents: None,
                     refund_type: None,
-                    message: "Subscription cancelled, downgraded to Free tier immediately".to_string(),
+                    message: "Subscription cancelled, downgraded to Free tier immediately"
+                        .to_string(),
                 });
             } else {
                 // No subscription exists - use consolidated change_tier() for proper audit trail
@@ -2154,12 +2284,11 @@ impl SubscriptionService {
                 );
 
                 // Get or create customer ID for consistency (but no subscription)
-                let customer_id: Option<(Option<String>,)> = sqlx::query_as(
-                    "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-                )
-                .bind(org_id)
-                .fetch_optional(&self.pool)
-                .await?;
+                let customer_id: Option<(Option<String>,)> =
+                    sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                        .bind(org_id)
+                        .fetch_optional(&self.pool)
+                        .await?;
 
                 let customer_id = customer_id
                     .and_then(|(id,)| id)
@@ -2177,7 +2306,7 @@ impl SubscriptionService {
                     custom_price_id: None,
                     scheduled: false,
                     scheduled_effective_date: None,
-                    refund_issued: false,  // No subscription = no refund needed
+                    refund_issued: false, // No subscription = no refund needed
                     refund_amount_cents: None,
                     refund_type: None,
                     message: "Organization set to Free tier immediately".to_string(),
@@ -2189,7 +2318,9 @@ impl SubscriptionService {
         let (owner_email, org_name) = self.get_owner_email(org_id).await?;
 
         // Step 5: Ensure Stripe customer exists (create if missing)
-        let customer = self.get_or_create_stripe_customer(org_id, &owner_email, &org_name).await?;
+        let customer = self
+            .get_or_create_stripe_customer(org_id, &owner_email, &org_name)
+            .await?;
 
         // Step 6: Check payment method (optional for trials, required otherwise)
         let has_payment_method = customer.default_source.is_some()
@@ -2200,10 +2331,15 @@ impl SubscriptionService {
                 .is_some();
 
         // Skip payment method validation if using invoice or trial payment methods
-        let payment_method_requires_validation = params.payment_method.as_deref() != Some("invoice")
+        let payment_method_requires_validation = params.payment_method.as_deref()
+            != Some("invoice")
             && params.payment_method.as_deref() != Some("trial");
 
-        if !has_payment_method && params.trial_days.is_none() && !params.skip_payment_validation && payment_method_requires_validation {
+        if !has_payment_method
+            && params.trial_days.is_none()
+            && !params.skip_payment_validation
+            && payment_method_requires_validation
+        {
             tracing::warn!(
                 org_id = %org_id,
                 tier = %params.new_tier,
@@ -2224,43 +2360,50 @@ impl SubscriptionService {
 
         // Step 7: Determine price ID (custom for Enterprise, default otherwise)
         let billing_interval = params.billing_interval.as_deref().unwrap_or("monthly");
-        let (price_id, custom_price_id) = if params.new_tier == "enterprise" && params.custom_price_cents.is_some() {
-            // Create custom Enterprise price
-            let interval = match billing_interval {
-                "annual" => "year",
-                _ => "month",
-            };
-            let custom_price = params.custom_price_cents.ok_or_else(|| {
-                BillingError::InvalidTier("Custom tier requires custom_price_cents".to_string())
-            })?;
-            let custom_id = self.create_custom_enterprise_price(
-                custom_price,
-                interval,
-                org_id,
-            ).await?;
-            (custom_id.clone(), Some(custom_id))
-        } else {
-            // Use default Stripe price IDs
-            let default_id = if billing_interval == "annual" {
-                self.stripe.config().annual_price_id_for_tier(&params.new_tier)
-                    .ok_or_else(|| BillingError::InvalidTier(format!("{} annual pricing not configured", params.new_tier)))?
-                    .to_string()
+        let (price_id, custom_price_id) =
+            if params.new_tier == "enterprise" && params.custom_price_cents.is_some() {
+                // Create custom Enterprise price
+                let interval = match billing_interval {
+                    "annual" => "year",
+                    _ => "month",
+                };
+                let custom_price = params.custom_price_cents.ok_or_else(|| {
+                    BillingError::InvalidTier("Custom tier requires custom_price_cents".to_string())
+                })?;
+                let custom_id = self
+                    .create_custom_enterprise_price(custom_price, interval, org_id)
+                    .await?;
+                (custom_id.clone(), Some(custom_id))
             } else {
-                self.stripe.config().price_id_for_tier(&params.new_tier)
-                    .ok_or_else(|| BillingError::InvalidTier(params.new_tier.clone()))?
-                    .to_string()
+                // Use default Stripe price IDs
+                let default_id = if billing_interval == "annual" {
+                    self.stripe
+                        .config()
+                        .annual_price_id_for_tier(&params.new_tier)
+                        .ok_or_else(|| {
+                            BillingError::InvalidTier(format!(
+                                "{} annual pricing not configured",
+                                params.new_tier
+                            ))
+                        })?
+                        .to_string()
+                } else {
+                    self.stripe
+                        .config()
+                        .price_id_for_tier(&params.new_tier)
+                        .ok_or_else(|| BillingError::InvalidTier(params.new_tier.clone()))?
+                        .to_string()
+                };
+                (default_id, None)
             };
-            (default_id, None)
-        };
 
         // Step 8: Get existing subscription
         let existing_sub = self.get_subscription(org_id).await.ok().flatten();
 
         // Step 9: Create or update subscription
         // If existing subscription is canceled, treat it as if it doesn't exist (create new)
-        let existing_sub_active = existing_sub.filter(|sub| {
-            sub.status != stripe::SubscriptionStatus::Canceled
-        });
+        let existing_sub_active =
+            existing_sub.filter(|sub| sub.status != stripe::SubscriptionStatus::Canceled);
 
         let subscription = match existing_sub_active {
             Some(existing) => {
@@ -2285,7 +2428,8 @@ impl SubscriptionService {
                     quantity: Some(1),
                     ..Default::default()
                 }]);
-                update_params.proration_behavior = Some(SubscriptionProrationBehavior::CreateProrations);
+                update_params.proration_behavior =
+                    Some(SubscriptionProrationBehavior::CreateProrations);
 
                 // If payment_method is "invoice", use send_invoice collection method
                 if params.payment_method.as_deref() == Some("invoice") {
@@ -2293,11 +2437,9 @@ impl SubscriptionService {
                     update_params.days_until_due = Some(30);
                 }
 
-                let mut sub = stripe::Subscription::update(
-                    self.stripe.inner(),
-                    &existing.id,
-                    update_params
-                ).await?;
+                let mut sub =
+                    stripe::Subscription::update(self.stripe.inner(), &existing.id, update_params)
+                        .await?;
 
                 // Apply trial period to existing subscription if specified
                 if let Some(trial_days) = params.trial_days {
@@ -2365,7 +2507,9 @@ impl SubscriptionService {
                     trial_days = trial_days,
                     "Setting subscription start date via trial period"
                 );
-                final_subscription = self.apply_trial_period(&final_subscription.id, trial_days as u32).await?;
+                final_subscription = self
+                    .apply_trial_period(&final_subscription.id, trial_days as u32)
+                    .await?;
             }
         }
 
@@ -2393,7 +2537,8 @@ impl SubscriptionService {
         };
 
         // Step 12: Sync to database immediately (don't wait for webhook)
-        self.sync_subscription_to_db(org_id, &final_subscription).await?;
+        self.sync_subscription_to_db(org_id, &final_subscription)
+            .await?;
 
         tracing::info!(
             org_id = %org_id,
@@ -2411,8 +2556,9 @@ impl SubscriptionService {
             stripe_subscription_id: Some(final_subscription.id.to_string()),
             stripe_customer_id: customer.id.to_string(),
             tier: params.new_tier.clone(),
-            trial_end: final_subscription.trial_end
-                .map(|t| OffsetDateTime::from_unix_timestamp(t).unwrap_or(OffsetDateTime::now_utc())),
+            trial_end: final_subscription.trial_end.map(|t| {
+                OffsetDateTime::from_unix_timestamp(t).unwrap_or(OffsetDateTime::now_utc())
+            }),
             stripe_invoice_id: invoice_id,
             invoice_status,
             subscription_start_date: params.subscription_start_date,
@@ -2420,10 +2566,13 @@ impl SubscriptionService {
             custom_price_id,
             scheduled: false,
             scheduled_effective_date: None,
-            refund_issued: false,  // This is an upgrade, not a downgrade
+            refund_issued: false, // This is an upgrade, not a downgrade
             refund_amount_cents: None,
             refund_type: None,
-            message: format!("Tier changed to {} immediately with proration", params.new_tier),
+            message: format!(
+                "Tier changed to {} immediately with proration",
+                params.new_tier
+            ),
         })
     }
 
@@ -2436,17 +2585,14 @@ impl SubscriptionService {
             JOIN organizations o ON o.id = u.org_id
             WHERE u.org_id = $1 AND u.role = 'owner'
             LIMIT 1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
         .await?;
 
         result.ok_or_else(|| {
-            BillingError::CustomerNotFound(format!(
-                "No owner found for organization {}",
-                org_id
-            ))
+            BillingError::CustomerNotFound(format!("No owner found for organization {}", org_id))
         })
     }
 
@@ -2459,16 +2605,16 @@ impl SubscriptionService {
         name: &str,
     ) -> BillingResult<Customer> {
         // Check if org already has a Stripe customer ID
-        let existing: Option<(Option<String>,)> = sqlx::query_as(
-            "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let existing: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         if let Some((Some(customer_id),)) = existing {
             // Retrieve existing customer
-            let customer_id = customer_id.parse::<CustomerId>()
+            let customer_id = customer_id
+                .parse::<CustomerId>()
                 .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
             let customer = Customer::retrieve(self.stripe.inner(), &customer_id, &[]).await?;
@@ -2498,7 +2644,7 @@ impl SubscriptionService {
 
         // Store customer ID in database
         sqlx::query(
-            "UPDATE organizations SET stripe_customer_id = $1, updated_at = NOW() WHERE id = $2"
+            "UPDATE organizations SET stripe_customer_id = $1, updated_at = NOW() WHERE id = $2",
         )
         .bind(customer.id.as_str())
         .bind(org_id)
@@ -2523,9 +2669,7 @@ impl SubscriptionService {
         // Calculate trial end timestamp
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| {
-                BillingError::Database(format!("System time error: {}", e))
-            })?
+            .map_err(|e| BillingError::Database(format!("System time error: {}", e)))?
             .as_secs() as i64;
 
         let trial_end_timestamp = now + (trial_days as i64 * 24 * 60 * 60);
@@ -2536,7 +2680,8 @@ impl SubscriptionService {
             ..Default::default()
         };
 
-        let subscription = Subscription::update(self.stripe.inner(), subscription_id, params).await?;
+        let subscription =
+            Subscription::update(self.stripe.inner(), subscription_id, params).await?;
 
         tracing::info!(
             subscription_id = %subscription_id,
@@ -2607,7 +2752,8 @@ impl SubscriptionService {
         use stripe::{CreateInvoice, CreateInvoiceItem};
 
         // Parse price_id string to PriceId
-        let stripe_price_id = price_id.parse::<stripe::PriceId>()
+        let stripe_price_id = price_id
+            .parse::<stripe::PriceId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid price ID: {}", e)))?;
 
         // Create invoice item
@@ -2625,11 +2771,8 @@ impl SubscriptionService {
         let invoice = stripe::Invoice::create(self.stripe.inner(), invoice_params).await?;
 
         // Finalize invoice to send it
-        let finalized = stripe::Invoice::finalize(
-            self.stripe.inner(),
-            &invoice.id,
-            Default::default()
-        ).await?;
+        let finalized =
+            stripe::Invoice::finalize(self.stripe.inner(), &invoice.id, Default::default()).await?;
 
         let status = match finalized.status {
             Some(s) => format!("{:?}", s),
@@ -2655,7 +2798,7 @@ impl SubscriptionService {
             WHERE org_id = $1
             ORDER BY created_at DESC
             LIMIT 1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -2663,9 +2806,11 @@ impl SubscriptionService {
 
         match result {
             Some((Some(sub_id),)) => {
-                let sub_id = sub_id.parse::<SubscriptionId>()
-                    .map_err(|e| BillingError::StripeApi(format!("Invalid subscription ID: {}", e)))?;
-                let subscription = Subscription::retrieve(self.stripe.inner(), &sub_id, &[]).await?;
+                let sub_id = sub_id.parse::<SubscriptionId>().map_err(|e| {
+                    BillingError::StripeApi(format!("Invalid subscription ID: {}", e))
+                })?;
+                let subscription =
+                    Subscription::retrieve(self.stripe.inner(), &sub_id, &[]).await?;
                 Ok(Some(subscription))
             }
             _ => Ok(None),
@@ -2677,7 +2822,8 @@ impl SubscriptionService {
         &self,
         customer_id: &str,
     ) -> BillingResult<Vec<Subscription>> {
-        let customer_id = customer_id.parse::<CustomerId>()
+        let customer_id = customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
         let params = ListSubscriptions {
@@ -2706,16 +2852,22 @@ impl SubscriptionService {
             StripeSubStatus::Paused => "paused",
         };
 
-        let price_id = subscription.items.data
+        let price_id = subscription
+            .items
+            .data
             .first()
             .and_then(|item| item.price.as_ref())
             .map(|p| p.id.to_string());
 
         // Find the metered subscription item (usage_type = "metered")
         // This is the item used for overage billing
-        let metered_item_id: Option<String> = subscription.items.data.iter()
+        let metered_item_id: Option<String> = subscription
+            .items
+            .data
+            .iter()
             .find(|item| {
-                item.price.as_ref()
+                item.price
+                    .as_ref()
                     .and_then(|p| p.recurring.as_ref())
                     .map(|r| r.usage_type == stripe::RecurringUsageType::Metered)
                     .unwrap_or(false)
@@ -2731,19 +2883,24 @@ impl SubscriptionService {
             );
         }
 
-        let current_period_start = OffsetDateTime::from_unix_timestamp(subscription.current_period_start)
-            .unwrap_or(OffsetDateTime::now_utc());
+        let current_period_start =
+            OffsetDateTime::from_unix_timestamp(subscription.current_period_start)
+                .unwrap_or(OffsetDateTime::now_utc());
 
-        let current_period_end = OffsetDateTime::from_unix_timestamp(subscription.current_period_end)
-            .unwrap_or(OffsetDateTime::now_utc());
+        let current_period_end =
+            OffsetDateTime::from_unix_timestamp(subscription.current_period_end)
+                .unwrap_or(OffsetDateTime::now_utc());
 
-        let canceled_at = subscription.canceled_at
+        let canceled_at = subscription
+            .canceled_at
             .map(|t| OffsetDateTime::from_unix_timestamp(t).unwrap_or(OffsetDateTime::now_utc()));
 
-        let trial_start = subscription.trial_start
+        let trial_start = subscription
+            .trial_start
             .map(|t| OffsetDateTime::from_unix_timestamp(t).unwrap_or(OffsetDateTime::now_utc()));
 
-        let trial_end = subscription.trial_end
+        let trial_end = subscription
+            .trial_end
             .map(|t| OffsetDateTime::from_unix_timestamp(t).unwrap_or(OffsetDateTime::now_utc()));
 
         // Upsert subscription record (including metered item ID)
@@ -2770,7 +2927,7 @@ impl SubscriptionService {
                 trial_start = EXCLUDED.trial_start,
                 trial_end = EXCLUDED.trial_end,
                 updated_at = NOW()
-            "#
+            "#,
         )
         .bind(Uuid::new_v4())
         .bind(org_id)
@@ -2791,7 +2948,10 @@ impl SubscriptionService {
         // Note: Using change_tier() for audit logging. In fully DB-authoritative architecture,
         // this sync might be skipped, but for now we keep it to support checkout flows
         // where the webhook confirms the tier change.
-        if let Some(price_id) = subscription.items.data.first()
+        if let Some(price_id) = subscription
+            .items
+            .data
+            .first()
             .and_then(|item| item.price.as_ref())
             .map(|p| p.id.as_str())
         {
@@ -2825,7 +2985,13 @@ impl SubscriptionService {
         &self,
         org_id: Uuid,
     ) -> BillingResult<CancelledSubscriptionInfo> {
-        let result: Option<(String, Option<String>, OffsetDateTime, OffsetDateTime, Option<OffsetDateTime>)> = sqlx::query_as(
+        let result: Option<(
+            String,
+            Option<String>,
+            OffsetDateTime,
+            OffsetDateTime,
+            Option<OffsetDateTime>,
+        )> = sqlx::query_as(
             r#"
             SELECT
                 stripe_subscription_id,
@@ -2837,38 +3003,39 @@ impl SubscriptionService {
             WHERE org_id = $1 AND status = 'canceled'
             ORDER BY canceled_at DESC NULLS LAST
             LIMIT 1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
         .await?;
 
         match result {
-            Some((stripe_subscription_id, stripe_price_id, current_period_start, current_period_end, canceled_at)) => {
-                Ok(CancelledSubscriptionInfo {
-                    stripe_subscription_id,
-                    stripe_price_id,
-                    current_period_start,
-                    current_period_end,
-                    canceled_at,
-                })
-            }
+            Some((
+                stripe_subscription_id,
+                stripe_price_id,
+                current_period_start,
+                current_period_end,
+                canceled_at,
+            )) => Ok(CancelledSubscriptionInfo {
+                stripe_subscription_id,
+                stripe_price_id,
+                current_period_start,
+                current_period_end,
+                canceled_at,
+            }),
             None => Err(BillingError::NoCancelledSubscription(org_id.to_string())),
         }
     }
 
     /// Get Stripe customer ID for an organization
     async fn get_stripe_customer_id(&self, org_id: Uuid) -> BillingResult<String> {
-        let result: Option<(Option<String>,)> = sqlx::query_as(
-            "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let result: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
-        result
-            .and_then(|(id,)| id)
-            .ok_or(BillingError::NoCustomer)
+        result.and_then(|(id,)| id).ok_or(BillingError::NoCustomer)
     }
 
     /// Reactivate a cancelled subscription with proration credit
@@ -2888,13 +3055,14 @@ impl SubscriptionService {
         // Validate tier
         if new_tier == "free" {
             return Err(BillingError::InvalidTier(
-                "Cannot reactivate to free tier - use downgrade instead".to_string()
+                "Cannot reactivate to free tier - use downgrade instead".to_string(),
             ));
         }
 
         // 1. Get customer ID
         let customer_id = self.get_stripe_customer_id(org_id).await?;
-        let stripe_customer_id = customer_id.parse::<CustomerId>()
+        let stripe_customer_id = customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
         // 2. Get cancelled subscription (if any)
@@ -2905,7 +3073,9 @@ impl SubscriptionService {
         let credit_cents = if let Some(ref sub) = cancelled_sub {
             if sub.current_period_end > now {
                 let remaining_secs = (sub.current_period_end - now).whole_seconds().max(0);
-                let total_period_secs = (sub.current_period_end - sub.current_period_start).whole_seconds().max(1);
+                let total_period_secs = (sub.current_period_end - sub.current_period_start)
+                    .whole_seconds()
+                    .max(1);
 
                 // Get the price of the cancelled subscription
                 // Default to $29 (Pro monthly) if we can't determine the price
@@ -2915,7 +3085,8 @@ impl SubscriptionService {
                     2900
                 };
 
-                let credit = (remaining_secs as f64 / total_period_secs as f64 * cancelled_price_cents as f64) as i64;
+                let credit = (remaining_secs as f64 / total_period_secs as f64
+                    * cancelled_price_cents as f64) as i64;
                 tracing::info!(
                     org_id = %org_id,
                     remaining_secs = remaining_secs,
@@ -2949,16 +3120,21 @@ impl SubscriptionService {
 
         // 7. Get price ID for new tier
         let price_id = match billing_interval.to_lowercase().as_str() {
-            "annual" | "yearly" => {
-                self.stripe.config().annual_price_id_for_tier(new_tier)
-                    .ok_or_else(|| BillingError::InvalidTier(
-                        format!("{} (annual pricing not configured)", new_tier)
-                    ))?
-            }
-            _ => {
-                self.stripe.config().price_id_for_tier(new_tier)
-                    .ok_or_else(|| BillingError::InvalidTier(new_tier.to_string()))?
-            }
+            "annual" | "yearly" => self
+                .stripe
+                .config()
+                .annual_price_id_for_tier(new_tier)
+                .ok_or_else(|| {
+                    BillingError::InvalidTier(format!(
+                        "{} (annual pricing not configured)",
+                        new_tier
+                    ))
+                })?,
+            _ => self
+                .stripe
+                .config()
+                .price_id_for_tier(new_tier)
+                .ok_or_else(|| BillingError::InvalidTier(new_tier.to_string()))?,
         };
 
         // Get the new subscription price
@@ -2986,7 +3162,10 @@ impl SubscriptionService {
             metadata.insert("credit_applied_cents".to_string(), net_credit.to_string());
         }
         if overage_cents > 0 {
-            metadata.insert("overages_deducted_cents".to_string(), overage_cents.to_string());
+            metadata.insert(
+                "overages_deducted_cents".to_string(),
+                overage_cents.to_string(),
+            );
         }
 
         let mut params = CreateSubscription::new(stripe_customer_id.clone());
@@ -3039,7 +3218,7 @@ impl SubscriptionService {
                     // Return data for regular checkout without coupon
                     return Err(BillingError::UseCheckoutFlow {
                         checkout_url: None, // Will be created by API layer
-                        credit_cents: 0, // Credit will be handled manually by admin
+                        credit_cents: 0,    // Credit will be handled manually by admin
                         coupon_id: None,
                         tier: new_tier.to_string(),
                         billing_interval: billing_interval.to_string(),
@@ -3060,7 +3239,8 @@ impl SubscriptionService {
             "Creating Stripe subscription for reactivation"
         );
 
-        let subscription = Subscription::create(self.stripe.inner(), params).await
+        let subscription = Subscription::create(self.stripe.inner(), params)
+            .await
             .map_err(|e| {
                 tracing::error!(
                     org_id = %org_id,
@@ -3088,8 +3268,8 @@ impl SubscriptionService {
 
         self.change_tier(org_id, new_tier, tier_options).await?;
 
-        let current_period_end = OffsetDateTime::from_unix_timestamp(subscription.current_period_end)
-            .unwrap_or(now);
+        let current_period_end =
+            OffsetDateTime::from_unix_timestamp(subscription.current_period_end).unwrap_or(now);
 
         let message = if trial_days > 0 {
             format!(
@@ -3133,12 +3313,14 @@ impl SubscriptionService {
 
     /// Get the price amount in cents for a Stripe price ID
     async fn get_price_amount(&self, price_id: &str) -> BillingResult<i64> {
-        let price_id = price_id.parse::<stripe::PriceId>()
+        let price_id = price_id
+            .parse::<stripe::PriceId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid price ID: {}", e)))?;
 
         let price = stripe::Price::retrieve(self.stripe.inner(), &price_id, &[]).await?;
 
-        price.unit_amount
+        price
+            .unit_amount
             .ok_or_else(|| BillingError::StripeApi("Price has no unit_amount".to_string()))
     }
 
@@ -3149,7 +3331,7 @@ impl SubscriptionService {
             SELECT COALESCE(SUM(total_charge_cents), 0)
             FROM overage_charges
             WHERE org_id = $1 AND status IN ('pending', 'awaiting_payment')
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -3165,7 +3347,7 @@ impl SubscriptionService {
             UPDATE overage_charges
             SET status = 'paid', paid_at = NOW()
             WHERE org_id = $1 AND status IN ('pending', 'awaiting_payment')
-            "#
+            "#,
         )
         .bind(org_id)
         .execute(&self.pool)
@@ -3178,8 +3360,12 @@ impl SubscriptionService {
     ///
     /// Returns the created coupon on success, or an error if the coupon cannot be created.
     /// The minimum amount is 50 cents (Stripe allows 1 cent, but very small amounts are not useful).
-    async fn create_credit_coupon(&self, amount_cents: i64, org_id: Uuid) -> BillingResult<stripe::Coupon> {
-        use stripe::{CreateCoupon, CouponDuration};
+    async fn create_credit_coupon(
+        &self,
+        amount_cents: i64,
+        org_id: Uuid,
+    ) -> BillingResult<stripe::Coupon> {
+        use stripe::{CouponDuration, CreateCoupon};
 
         // Validate amount - Stripe allows 1 cent minimum, but 50 cents is more practical
         if amount_cents < 50 {
@@ -3188,9 +3374,10 @@ impl SubscriptionService {
                 amount_cents = amount_cents,
                 "Credit amount too small to create coupon (minimum 50 cents)"
             );
-            return Err(BillingError::InvalidAmount(
-                format!("Credit amount {} cents is too small to create a coupon (minimum 50 cents)", amount_cents)
-            ));
+            return Err(BillingError::InvalidAmount(format!(
+                "Credit amount {} cents is too small to create a coupon (minimum 50 cents)",
+                amount_cents
+            )));
         }
 
         // Create strings first to avoid lifetime issues
@@ -3217,7 +3404,8 @@ impl SubscriptionService {
             "Attempting to create Stripe coupon"
         );
 
-        let coupon = stripe::Coupon::create(self.stripe.inner(), params).await
+        let coupon = stripe::Coupon::create(self.stripe.inner(), params)
+            .await
             .map_err(|e| {
                 tracing::error!(
                     org_id = %org_id,
@@ -3248,17 +3436,16 @@ impl SubscriptionService {
             WHERE org_id = $1 AND status IN ('active', 'trialing', 'past_due')
             ORDER BY created_at DESC
             LIMIT 1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
         .await?;
 
         match result {
-            Some((Some(id),)) => {
-                id.parse::<SubscriptionId>()
-                    .map_err(|e| BillingError::StripeApi(format!("Invalid subscription ID: {}", e)))
-            }
+            Some((Some(id),)) => id
+                .parse::<SubscriptionId>()
+                .map_err(|e| BillingError::StripeApi(format!("Invalid subscription ID: {}", e))),
             _ => Err(BillingError::SubscriptionNotFound(org_id.to_string())),
         }
     }
@@ -3281,13 +3468,13 @@ impl SubscriptionService {
         let subscription_id = self.get_subscription_id(org_id).await?;
 
         // Get current subscription to verify it's not already paused
-        let subscription = Subscription::retrieve(self.stripe.inner(), &subscription_id, &[])
-            .await?;
+        let subscription =
+            Subscription::retrieve(self.stripe.inner(), &subscription_id, &[]).await?;
 
         // Check if already paused
         if subscription.pause_collection.is_some() {
             return Err(BillingError::InvalidInput(
-                "Subscription is already paused".to_string()
+                "Subscription is already paused".to_string(),
             ));
         }
 
@@ -3298,7 +3485,10 @@ impl SubscriptionService {
         // Note: Stripe's async-stripe library may need manual JSON for pause_collection
         // Using metadata as fallback tracking mechanism
         let mut metadata = subscription.metadata.clone();
-        metadata.insert("paused_at".to_string(), OffsetDateTime::now_utc().to_string());
+        metadata.insert(
+            "paused_at".to_string(),
+            OffsetDateTime::now_utc().to_string(),
+        );
         metadata.insert("paused_by".to_string(), user_id.to_string());
         if let Some(ref r) = reason {
             metadata.insert("pause_reason".to_string(), r.clone());
@@ -3315,8 +3505,7 @@ impl SubscriptionService {
         // that it's actually a pause that can be resumed
 
         // Update subscription metadata to track pause
-        Subscription::update(self.stripe.inner(), &subscription_id, update)
-            .await?;
+        Subscription::update(self.stripe.inner(), &subscription_id, update).await?;
 
         // Update database
         sqlx::query(
@@ -3329,7 +3518,7 @@ impl SubscriptionService {
                 scheduled_resume_at = $4,
                 updated_at = NOW()
             WHERE org_id = $1 AND status IN ('active', 'trialing')
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(user_id)
@@ -3341,15 +3530,18 @@ impl SubscriptionService {
 
         // Log billing event
         let event_logger = BillingEventLogger::new(self.pool.clone());
-        if let Err(e) = event_logger.log_event(
-            BillingEventBuilder::new(org_id, BillingEventType::SubscriptionPaused)
-                .data(serde_json::json!({
-                    "subscription_id": subscription_id.to_string(),
-                    "reason": reason,
-                    "resume_at": resume_at.map(|t| t.to_string()),
-                }))
-                .actor(user_id, ActorType::User)
-        ).await {
+        if let Err(e) = event_logger
+            .log_event(
+                BillingEventBuilder::new(org_id, BillingEventType::SubscriptionPaused)
+                    .data(serde_json::json!({
+                        "subscription_id": subscription_id.to_string(),
+                        "reason": reason,
+                        "resume_at": resume_at.map(|t| t.to_string()),
+                    }))
+                    .actor(user_id, ActorType::User),
+            )
+            .await
+        {
             tracing::warn!(error = %e, "Failed to log subscription paused event");
         }
 
@@ -3378,8 +3570,8 @@ impl SubscriptionService {
         let subscription_id = self.get_subscription_id(org_id).await?;
 
         // Get current subscription
-        let subscription = Subscription::retrieve(self.stripe.inner(), &subscription_id, &[])
-            .await?;
+        let subscription =
+            Subscription::retrieve(self.stripe.inner(), &subscription_id, &[]).await?;
 
         // Update Stripe metadata to clear pause info
         let mut metadata = subscription.metadata.clone();
@@ -3387,7 +3579,10 @@ impl SubscriptionService {
         metadata.remove("paused_by");
         metadata.remove("pause_reason");
         metadata.remove("resume_at");
-        metadata.insert("resumed_at".to_string(), OffsetDateTime::now_utc().to_string());
+        metadata.insert(
+            "resumed_at".to_string(),
+            OffsetDateTime::now_utc().to_string(),
+        );
         metadata.insert("resumed_by".to_string(), user_id.to_string());
 
         let mut update = UpdateSubscription::new();
@@ -3398,8 +3593,7 @@ impl SubscriptionService {
             update.cancel_at_period_end = Some(false);
         }
 
-        Subscription::update(self.stripe.inner(), &subscription_id, update)
-            .await?;
+        Subscription::update(self.stripe.inner(), &subscription_id, update).await?;
 
         // Update database
         let updated: Option<(Option<OffsetDateTime>, Option<String>)> = sqlx::query_as(
@@ -3414,7 +3608,7 @@ impl SubscriptionService {
                 updated_at = NOW()
             WHERE org_id = $1 AND is_paused = true
             RETURNING paused_at, pause_reason
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -3426,15 +3620,18 @@ impl SubscriptionService {
 
         // Log billing event
         let event_logger = BillingEventLogger::new(self.pool.clone());
-        if let Err(e) = event_logger.log_event(
-            BillingEventBuilder::new(org_id, BillingEventType::SubscriptionResumed)
-                .data(serde_json::json!({
-                    "subscription_id": subscription_id.to_string(),
-                    "was_paused_at": original_pause_time.map(|t| t.to_string()),
-                    "original_reason": original_reason,
-                }))
-                .actor(user_id, ActorType::User)
-        ).await {
+        if let Err(e) = event_logger
+            .log_event(
+                BillingEventBuilder::new(org_id, BillingEventType::SubscriptionResumed)
+                    .data(serde_json::json!({
+                        "subscription_id": subscription_id.to_string(),
+                        "was_paused_at": original_pause_time.map(|t| t.to_string()),
+                        "original_reason": original_reason,
+                    }))
+                    .actor(user_id, ActorType::User),
+            )
+            .await
+        {
             tracing::warn!(error = %e, "Failed to log subscription resumed event");
         }
 
@@ -3453,14 +3650,23 @@ impl SubscriptionService {
     }
 
     /// Get pause status for a subscription
-    pub async fn get_pause_status(&self, org_id: Uuid) -> BillingResult<Option<SubscriptionPauseStatus>> {
-        let result: Option<(bool, Option<OffsetDateTime>, Option<Uuid>, Option<String>, Option<OffsetDateTime>)> = sqlx::query_as(
+    pub async fn get_pause_status(
+        &self,
+        org_id: Uuid,
+    ) -> BillingResult<Option<SubscriptionPauseStatus>> {
+        let result: Option<(
+            bool,
+            Option<OffsetDateTime>,
+            Option<Uuid>,
+            Option<String>,
+            Option<OffsetDateTime>,
+        )> = sqlx::query_as(
             r#"
             SELECT is_paused, paused_at, paused_by, pause_reason, scheduled_resume_at
             FROM subscriptions
             WHERE org_id = $1 AND status IN ('active', 'trialing', 'past_due')
             LIMIT 1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)

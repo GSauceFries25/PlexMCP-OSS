@@ -329,9 +329,15 @@ impl SubscriptionTier {
         EffectiveLimits {
             max_mcps: custom.max_mcps.unwrap_or_else(|| self.max_mcps()),
             max_api_keys: custom.max_api_keys.unwrap_or_else(|| self.max_api_keys()),
-            max_team_members: custom.max_team_members.unwrap_or_else(|| self.max_team_members()),
-            max_requests_monthly: custom.max_requests_monthly.unwrap_or_else(|| self.monthly_requests()),
-            overage_rate_cents: custom.overage_rate_cents.or_else(|| self.overage_rate_per_1k_cents()),
+            max_team_members: custom
+                .max_team_members
+                .unwrap_or_else(|| self.max_team_members()),
+            max_requests_monthly: custom
+                .max_requests_monthly
+                .unwrap_or_else(|| self.monthly_requests()),
+            overage_rate_cents: custom
+                .overage_rate_cents
+                .or_else(|| self.overage_rate_per_1k_cents()),
             monthly_price_cents: custom.monthly_price_cents,
             source,
         }
@@ -1055,7 +1061,10 @@ mod tests {
         // Test default rates (when env vars not set)
         assert_eq!(SubscriptionTier::Free.overage_rate_per_1k_cents(), None);
         assert_eq!(SubscriptionTier::Starter.overage_rate_per_1k_cents(), None);
-        assert_eq!(SubscriptionTier::Enterprise.overage_rate_per_1k_cents(), None);
+        assert_eq!(
+            SubscriptionTier::Enterprise.overage_rate_per_1k_cents(),
+            None
+        );
 
         // Pro and Team rates are configurable via env vars
         // Test defaults only when env vars are not set
@@ -1117,9 +1126,18 @@ mod tests {
             return;
         }
         // Test request add-ons (25K each)
-        assert_eq!(SubscriptionTier::Free.monthly_requests_with_addons(0), 1_000);
-        assert_eq!(SubscriptionTier::Free.monthly_requests_with_addons(1), 26_000);
-        assert_eq!(SubscriptionTier::Free.monthly_requests_with_addons(2), 51_000);
+        assert_eq!(
+            SubscriptionTier::Free.monthly_requests_with_addons(0),
+            1_000
+        );
+        assert_eq!(
+            SubscriptionTier::Free.monthly_requests_with_addons(1),
+            26_000
+        );
+        assert_eq!(
+            SubscriptionTier::Free.monthly_requests_with_addons(2),
+            51_000
+        );
 
         // Test MCP add-ons (5 each)
         assert_eq!(SubscriptionTier::Pro.max_mcps_with_addons(0), 20);
@@ -1132,8 +1150,14 @@ mod tests {
         assert_eq!(SubscriptionTier::Pro.max_team_members_with_addons(2), 11);
 
         // Enterprise tier should stay unlimited
-        assert_eq!(SubscriptionTier::Enterprise.monthly_requests_with_addons(10), u64::MAX);
-        assert_eq!(SubscriptionTier::Enterprise.max_mcps_with_addons(10), u32::MAX);
+        assert_eq!(
+            SubscriptionTier::Enterprise.monthly_requests_with_addons(10),
+            u64::MAX
+        );
+        assert_eq!(
+            SubscriptionTier::Enterprise.max_mcps_with_addons(10),
+            u32::MAX
+        );
     }
 
     #[test]
@@ -1147,10 +1171,22 @@ mod tests {
 
     #[test]
     fn test_subscription_tier_from_str() {
-        assert_eq!("free".parse::<SubscriptionTier>().unwrap(), SubscriptionTier::Free);
-        assert_eq!("FREE".parse::<SubscriptionTier>().unwrap(), SubscriptionTier::Free);
-        assert_eq!("Pro".parse::<SubscriptionTier>().unwrap(), SubscriptionTier::Pro);
-        assert_eq!("TEAM".parse::<SubscriptionTier>().unwrap(), SubscriptionTier::Team);
+        assert_eq!(
+            "free".parse::<SubscriptionTier>().unwrap(),
+            SubscriptionTier::Free
+        );
+        assert_eq!(
+            "FREE".parse::<SubscriptionTier>().unwrap(),
+            SubscriptionTier::Free
+        );
+        assert_eq!(
+            "Pro".parse::<SubscriptionTier>().unwrap(),
+            SubscriptionTier::Pro
+        );
+        assert_eq!(
+            "TEAM".parse::<SubscriptionTier>().unwrap(),
+            SubscriptionTier::Team
+        );
         assert!("invalid".parse::<SubscriptionTier>().is_err());
     }
 
@@ -1227,7 +1263,10 @@ mod tests {
     fn test_member_status_display_and_parse() {
         assert_eq!(format!("{}", MemberStatus::Active), "active");
         assert_eq!(format!("{}", MemberStatus::Suspended), "suspended");
-        assert_eq!("active".parse::<MemberStatus>().unwrap(), MemberStatus::Active);
+        assert_eq!(
+            "active".parse::<MemberStatus>().unwrap(),
+            MemberStatus::Active
+        );
         assert!("invalid".parse::<MemberStatus>().is_err());
     }
 

@@ -8,7 +8,9 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use argon2::{
-    password_hash::{rand_core::RngCore, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{
+        rand_core::RngCore, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
+    },
     Argon2,
 };
 use axum::{
@@ -246,8 +248,7 @@ fn derive_encryption_key_v2(pin: &str, salt: &str) -> Result<[u8; 32], ApiError>
 /// SOC 2 CC6.1: All new encryptions use Argon2id for secure key derivation
 fn encrypt_api_key(api_key: &str, pin: &str, salt: &str) -> Result<(String, String), ApiError> {
     let key = derive_encryption_key_v2(pin, salt)?;
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|_| ApiError::Internal)?;
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| ApiError::Internal)?;
 
     // Generate random nonce (12 bytes for GCM)
     let mut nonce_bytes = [0u8; 12];
@@ -276,12 +277,13 @@ fn decrypt_api_key(
         ENCRYPTION_VERSION_ARGON2 => derive_encryption_key_v2(pin, salt)?,
         _ => {
             tracing::error!(encryption_version = %encryption_version, "Unknown encryption version");
-            return Err(ApiError::Validation("Unknown encryption version".to_string()));
+            return Err(ApiError::Validation(
+                "Unknown encryption version".to_string(),
+            ));
         }
     };
 
-    let cipher = Aes256Gcm::new_from_slice(&key)
-        .map_err(|_| ApiError::Internal)?;
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| ApiError::Internal)?;
 
     let ciphertext = BASE64
         .decode(encrypted_key)
@@ -301,8 +303,7 @@ fn decrypt_api_key(
         .decrypt(nonce, ciphertext.as_ref())
         .map_err(|_| ApiError::Validation("Decryption failed - invalid PIN".to_string()))?;
 
-    String::from_utf8(plaintext)
-        .map_err(|_| ApiError::Internal)
+    String::from_utf8(plaintext).map_err(|_| ApiError::Internal)
 }
 
 /// Generate a cryptographically secure random token (32 bytes, hex-encoded)
@@ -431,12 +432,11 @@ pub async fn set_pin(
     validate_pin(&req.pin)?;
 
     // Check if user already has a PIN (should use change_pin endpoint)
-    let existing: Option<(String,)> = sqlx::query_as(
-        "SELECT pin_hash FROM user_pins WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let existing: Option<(String,)> =
+        sqlx::query_as("SELECT pin_hash FROM user_pins WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if existing.is_some() {
         return Err(ApiError::Validation(
@@ -543,7 +543,13 @@ pub async fn change_pin(
     for key in keys {
         if let (Some(encrypted), Some(nonce)) = (key.encrypted_key, key.key_nonce) {
             // Decrypt with old PIN (using original encryption version)
-            match decrypt_api_key(&encrypted, &nonce, &req.current_pin, old_salt, key.encryption_version) {
+            match decrypt_api_key(
+                &encrypted,
+                &nonce,
+                &req.current_pin,
+                old_salt,
+                key.encryption_version,
+            ) {
                 Ok(plaintext) => {
                     // Re-encrypt with new PIN (always v2 - Argon2id)
                     if let Ok((new_encrypted, new_nonce)) =
@@ -739,12 +745,10 @@ pub async fn delete_pin(
 
     // Clear encrypted keys for this user's organization
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
-    sqlx::query(
-        "UPDATE api_keys SET encrypted_key = NULL, key_nonce = NULL WHERE org_id = $1",
-    )
-    .bind(org_id)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query("UPDATE api_keys SET encrypted_key = NULL, key_nonce = NULL WHERE org_id = $1")
+        .bind(org_id)
+        .execute(&state.pool)
+        .await?;
 
     // Delete PIN record from user_pins table
     sqlx::query("DELETE FROM user_pins WHERE user_id = $1")
@@ -783,7 +787,9 @@ pub async fn reveal_api_key(
     .bind(user_id)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| ApiError::Validation("No PIN set. Set a PIN first to reveal keys.".to_string()))?;
+    .ok_or_else(|| {
+        ApiError::Validation("No PIN set. Set a PIN first to reveal keys.".to_string())
+    })?;
 
     // Check if locked
     let now = OffsetDateTime::now_utc();
@@ -815,12 +821,10 @@ pub async fn reveal_api_key(
     }
 
     // Reset failed attempts on success
-    sqlx::query(
-        "UPDATE user_pins SET failed_attempts = 0, locked_until = NULL WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query("UPDATE user_pins SET failed_attempts = 0, locked_until = NULL WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&state.pool)
+        .await?;
 
     // Get the API key - query by org_id since api_keys table uses org_id (not user_id)
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
@@ -849,15 +853,23 @@ pub async fn reveal_api_key(
         ApiError::NotFound
     })?;
 
-    let encrypted = key
-        .encrypted_key
-        .ok_or_else(|| ApiError::Validation("Key not available for reveal (created before PIN was set)".to_string()))?;
+    let encrypted = key.encrypted_key.ok_or_else(|| {
+        ApiError::Validation(
+            "Key not available for reveal (created before PIN was set)".to_string(),
+        )
+    })?;
     let nonce = key
         .key_nonce
         .ok_or_else(|| ApiError::Validation("Key nonce not found".to_string()))?;
 
     // Attempt decryption (using stored encryption version for backwards compatibility)
-    let plaintext = match decrypt_api_key(&encrypted, &nonce, &req.pin, &pin_data.pin_salt, key.encryption_version) {
+    let plaintext = match decrypt_api_key(
+        &encrypted,
+        &nonce,
+        &req.pin,
+        &pin_data.pin_salt,
+        key.encryption_version,
+    ) {
         Ok(pt) => pt,
         Err(_) => {
             // Check if key was created before PIN was set (or encrypted with different PIN)
@@ -915,22 +927,19 @@ pub async fn forgot_pin(
     let email = req.email.to_lowercase().trim().to_string();
 
     // Find user by email
-    let user: Option<UserEmailRow> = sqlx::query_as(
-        "SELECT id, email FROM users WHERE email = $1"
-    )
-    .bind(&email)
-    .fetch_optional(&state.pool)
-    .await?;
+    let user: Option<UserEmailRow> = sqlx::query_as("SELECT id, email FROM users WHERE email = $1")
+        .bind(&email)
+        .fetch_optional(&state.pool)
+        .await?;
 
     // Always return success to prevent email enumeration
     if let Some(user) = user {
         // Check if user has a PIN set
-        let has_pin: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT user_id FROM user_pins WHERE user_id = $1"
-        )
-        .bind(user.id)
-        .fetch_optional(&state.pool)
-        .await?;
+        let has_pin: Option<(Uuid,)> =
+            sqlx::query_as("SELECT user_id FROM user_pins WHERE user_id = $1")
+                .bind(user.id)
+                .fetch_optional(&state.pool)
+                .await?;
 
         if has_pin.is_some() {
             // Check rate limit: count recent reset requests
@@ -938,7 +947,7 @@ pub async fn forgot_pin(
                 r#"
                 SELECT COUNT(*) FROM pin_reset_tokens
                 WHERE user_id = $1 AND created_at > NOW() - INTERVAL '1 hour'
-                "#
+                "#,
             )
             .bind(user.id)
             .fetch_one(&state.pool)
@@ -961,7 +970,7 @@ pub async fn forgot_pin(
                     r#"
                     INSERT INTO pin_reset_tokens (user_id, token_hash, expires_at)
                     VALUES ($1, $2, $3)
-                    "#
+                    "#,
                 )
                 .bind(user.id)
                 .bind(&token_hash)
@@ -976,7 +985,9 @@ pub async fn forgot_pin(
                     &state.config.public_url,
                     &user.email,
                     &reset_token,
-                ).await {
+                )
+                .await
+                {
                     tracing::error!("Failed to send PIN reset email: {:?}", e);
                 }
 
@@ -986,7 +997,9 @@ pub async fn forgot_pin(
     }
 
     Ok(Json(crate::routes::auth::MessageResponse {
-        message: "If an account exists with that email and has a PIN set, a reset link has been sent.".to_string(),
+        message:
+            "If an account exists with that email and has a PIN set, a reset link has been sent."
+                .to_string(),
     }))
 }
 
@@ -1007,7 +1020,7 @@ pub async fn reset_pin(
         SELECT id, user_id, token_hash, expires_at, used_at
         FROM pin_reset_tokens
         WHERE token_hash = $1 AND expires_at > $2 AND used_at IS NULL
-        "#
+        "#,
     )
     .bind(&token_hash)
     .bind(now)
@@ -1019,21 +1032,17 @@ pub async fn reset_pin(
     let mut tx = state.pool.begin().await?;
 
     // Mark token as used
-    sqlx::query(
-        "UPDATE pin_reset_tokens SET used_at = $1 WHERE id = $2"
-    )
-    .bind(now)
-    .bind(token_row.id)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("UPDATE pin_reset_tokens SET used_at = $1 WHERE id = $2")
+        .bind(now)
+        .bind(token_row.id)
+        .execute(&mut *tx)
+        .await?;
 
     // Get user's org_id to clear their encrypted keys
-    let org_id: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT org_id FROM users WHERE id = $1"
-    )
-    .bind(token_row.user_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let org_id: Option<(Uuid,)> = sqlx::query_as("SELECT org_id FROM users WHERE id = $1")
+        .bind(token_row.user_id)
+        .fetch_optional(&mut *tx)
+        .await?;
 
     // Clear all encrypted API keys for this user's organization
     let invalidated_count = if let Some((org_id,)) = org_id {
@@ -1042,7 +1051,7 @@ pub async fn reset_pin(
             UPDATE api_keys
             SET encrypted_key = NULL, key_nonce = NULL
             WHERE org_id = $1 AND encrypted_key IS NOT NULL
-            "#
+            "#,
         )
         .bind(org_id)
         .execute(&mut *tx)
@@ -1138,12 +1147,11 @@ pub async fn encrypt_and_store_key(
     pin: &str,
 ) -> Result<(), ApiError> {
     // Get user's PIN hash and salt from user_pins table
-    let pin_data: Option<(String, String)> = sqlx::query_as(
-        "SELECT pin_hash, pin_salt FROM user_pins WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let pin_data: Option<(String, String)> =
+        sqlx::query_as("SELECT pin_hash, pin_salt FROM user_pins WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
 
     if let Some((pin_hash, salt)) = pin_data {
         // Verify the PIN before using it for encryption
@@ -1184,16 +1192,14 @@ pub async fn verify_user_pin(
     validate_pin(pin)?;
 
     // Get user's PIN data
-    let pin_data: Option<(String,)> = sqlx::query_as(
-        "SELECT pin_hash FROM user_pins WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let pin_data: Option<(String,)> =
+        sqlx::query_as("SELECT pin_hash FROM user_pins WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
 
-    let (pin_hash,) = pin_data.ok_or_else(|| {
-        ApiError::Validation("No PIN set for this user".to_string())
-    })?;
+    let (pin_hash,) =
+        pin_data.ok_or_else(|| ApiError::Validation("No PIN set for this user".to_string()))?;
 
     // Verify the PIN
     if !verify_pin_hash(pin, &pin_hash)? {

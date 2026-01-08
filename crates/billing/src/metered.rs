@@ -33,14 +33,9 @@ pub enum UsageReportResult {
         overage_units: i64,
     },
     /// Error during reporting
-    Error {
-        org_id: Uuid,
-        error: String,
-    },
+    Error { org_id: Uuid, error: String },
     /// Subscription has no metered item (Free or Enterprise tier)
-    NoMeteredItem {
-        org_id: Uuid,
-    },
+    NoMeteredItem { org_id: Uuid },
 }
 
 /// Subscription with metered billing info
@@ -68,8 +63,9 @@ impl MeteredBillingService {
 
     /// Get all active subscriptions with metered items
     pub async fn get_metered_subscriptions(&self) -> BillingResult<Vec<MeteredSubscription>> {
-        let rows: Vec<(Uuid, Uuid, String, String, OffsetDateTime, OffsetDateTime)> = sqlx::query_as(
-            r#"
+        let rows: Vec<(Uuid, Uuid, String, String, OffsetDateTime, OffsetDateTime)> =
+            sqlx::query_as(
+                r#"
             SELECT
                 s.org_id,
                 s.id as subscription_id,
@@ -82,21 +78,26 @@ impl MeteredBillingService {
             WHERE s.status = 'active'
               AND s.stripe_metered_item_id IS NOT NULL
               AND o.subscription_tier IN ('pro', 'team')
-            "#
-        )
-        .fetch_all(&self.pool)
-        .await?;
+            "#,
+            )
+            .fetch_all(&self.pool)
+            .await?;
 
-        Ok(rows.into_iter().map(|(org_id, subscription_id, metered_item_id, tier, start, end)| {
-            MeteredSubscription {
-                org_id,
-                subscription_id,
-                stripe_metered_item_id: metered_item_id,
-                tier,
-                current_period_start: start,
-                current_period_end: end,
-            }
-        }).collect())
+        Ok(rows
+            .into_iter()
+            .map(
+                |(org_id, subscription_id, metered_item_id, tier, start, end)| {
+                    MeteredSubscription {
+                        org_id,
+                        subscription_id,
+                        stripe_metered_item_id: metered_item_id,
+                        tier,
+                        current_period_start: start,
+                        current_period_end: end,
+                    }
+                },
+            )
+            .collect())
     }
 
     /// Get total API calls for an organization in a billing period
@@ -113,7 +114,7 @@ impl MeteredBillingService {
             FROM usage_records
             WHERE org_id = $1
               AND period_start >= date_trunc('day', $2::timestamptz)
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(period_start)
@@ -138,10 +139,10 @@ impl MeteredBillingService {
         subscription: &MeteredSubscription,
     ) -> UsageReportResult {
         // Get total usage for the billing period
-        let total_usage = match self.get_period_usage(
-            subscription.org_id,
-            subscription.current_period_start,
-        ).await {
+        let total_usage = match self
+            .get_period_usage(subscription.org_id, subscription.current_period_start)
+            .await
+        {
             Ok(usage) => usage,
             Err(e) => {
                 return UsageReportResult::Error {
@@ -163,7 +164,10 @@ impl MeteredBillingService {
         };
 
         // If no overage, still report 0 to reset any previous values
-        let item_id = match subscription.stripe_metered_item_id.parse::<SubscriptionItemId>() {
+        let item_id = match subscription
+            .stripe_metered_item_id
+            .parse::<SubscriptionItemId>()
+        {
             Ok(id) => id,
             Err(e) => {
                 return UsageReportResult::Error {
@@ -183,12 +187,10 @@ impl MeteredBillingService {
         match UsageRecord::create(self.stripe.inner(), &item_id, params).await {
             Ok(_record) => {
                 // Store the report in our database for audit trail
-                if let Err(e) = self.store_usage_report(
-                    subscription,
-                    total_usage,
-                    included_limit,
-                    overage_units,
-                ).await {
+                if let Err(e) = self
+                    .store_usage_report(subscription, total_usage, included_limit, overage_units)
+                    .await
+                {
                     tracing::warn!(
                         org_id = %subscription.org_id,
                         error = %e,
@@ -246,7 +248,7 @@ impl MeteredBillingService {
                 period_start, period_end, total_usage,
                 included_limit, overage_units
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            "#
+            "#,
         )
         .bind(subscription.org_id)
         .bind(subscription.subscription_id)
@@ -285,13 +287,16 @@ impl MeteredBillingService {
         }
 
         // Log summary
-        let reported_count = results.iter()
+        let reported_count = results
+            .iter()
             .filter(|r| matches!(r, UsageReportResult::Reported { .. }))
             .count();
-        let no_overage_count = results.iter()
+        let no_overage_count = results
+            .iter()
             .filter(|r| matches!(r, UsageReportResult::NoOverage { .. }))
             .count();
-        let error_count = results.iter()
+        let error_count = results
+            .iter()
             .filter(|r| matches!(r, UsageReportResult::Error { .. }))
             .count();
 

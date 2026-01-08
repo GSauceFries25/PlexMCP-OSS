@@ -155,13 +155,12 @@ pub async fn get_org_by_id(
     let user_id = auth_user.user_id.ok_or(ApiError::Unauthorized)?;
 
     // Verify user is a member of this organization
-    let is_member: Option<(i32,)> = sqlx::query_as(
-        "SELECT 1 FROM organization_members WHERE org_id = $1 AND user_id = $2"
-    )
-    .bind(org_id)
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let is_member: Option<(i32,)> =
+        sqlx::query_as("SELECT 1 FROM organization_members WHERE org_id = $1 AND user_id = $2")
+            .bind(org_id)
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if is_member.is_none() {
         return Err(ApiError::NotFound);
@@ -208,7 +207,7 @@ pub async fn update_org(
     if let Some(ref name) = req.name {
         if name.trim().is_empty() || name.len() > 100 {
             return Err(ApiError::Validation(
-                "Organization name must be between 1 and 100 characters".to_string()
+                "Organization name must be between 1 and 100 characters".to_string(),
             ));
         }
 
@@ -231,12 +230,11 @@ pub async fn update_org(
     // Update custom_subdomain if provided (paid tiers only)
     if let Some(ref custom_subdomain) = req.custom_subdomain {
         // Get current tier
-        let tier: (String,) = sqlx::query_as(
-            "SELECT subscription_tier FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_one(&state.pool)
-        .await?;
+        let tier: (String,) =
+            sqlx::query_as("SELECT subscription_tier FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_one(&state.pool)
+                .await?;
 
         // Check tier access (pro, team, enterprise only)
         let tier_lower = tier.0.to_lowercase();
@@ -260,7 +258,7 @@ pub async fn update_org(
             // Check reserved
             if is_reserved_subdomain(&subdomain) {
                 return Err(ApiError::Validation(
-                    "This subdomain is reserved and cannot be used".to_string()
+                    "This subdomain is reserved and cannot be used".to_string(),
                 ));
             }
 
@@ -274,14 +272,18 @@ pub async fn update_org(
             .await?;
 
             if existing.is_some() {
-                return Err(ApiError::Conflict("This subdomain is already taken".to_string()));
+                return Err(ApiError::Conflict(
+                    "This subdomain is already taken".to_string(),
+                ));
             }
 
-            sqlx::query("UPDATE organizations SET custom_subdomain = $1, updated_at = NOW() WHERE id = $2")
-                .bind(&subdomain)
-                .bind(org_id)
-                .execute(&state.pool)
-                .await?;
+            sqlx::query(
+                "UPDATE organizations SET custom_subdomain = $1, updated_at = NOW() WHERE id = $2",
+            )
+            .bind(&subdomain)
+            .bind(org_id)
+            .execute(&state.pool)
+            .await?;
         }
     }
 
@@ -318,28 +320,22 @@ pub async fn get_org_stats(
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
     // Count members
-    let member_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM users WHERE org_id = $1"
-    )
-    .bind(org_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let member_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE org_id = $1")
+        .bind(org_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     // Count API keys
-    let api_key_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM api_keys WHERE org_id = $1"
-    )
-    .bind(org_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let api_key_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM api_keys WHERE org_id = $1")
+        .bind(org_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     // Count MCPs
-    let mcp_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM mcp_instances WHERE org_id = $1"
-    )
-    .bind(org_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let mcp_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM mcp_instances WHERE org_id = $1")
+        .bind(org_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     // Get current period usage
     let usage: Option<(i64, i64)> = sqlx::query_as(
@@ -348,7 +344,7 @@ pub async fn get_org_stats(
         FROM usage_records
         WHERE org_id = $1
           AND period_start >= date_trunc('month', CURRENT_DATE)
-        "#
+        "#,
     )
     .bind(org_id)
     .fetch_optional(&state.pool)
@@ -392,33 +388,27 @@ pub async fn get_subscription(
         WHERE org_id = $1
         ORDER BY created_at DESC
         LIMIT 1
-        "#
+        "#,
     )
     .bind(org_id)
     .fetch_optional(&state.pool)
     .await?;
 
     // Get usage counts
-    let member_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM users WHERE org_id = $1"
-    )
-    .bind(org_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let member_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE org_id = $1")
+        .bind(org_id)
+        .fetch_one(&state.pool)
+        .await?;
 
-    let api_key_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM api_keys WHERE org_id = $1"
-    )
-    .bind(org_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let api_key_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM api_keys WHERE org_id = $1")
+        .bind(org_id)
+        .fetch_one(&state.pool)
+        .await?;
 
-    let mcp_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM mcp_instances WHERE org_id = $1"
-    )
-    .bind(org_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let mcp_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM mcp_instances WHERE org_id = $1")
+        .bind(org_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     // Get current period usage
     let usage: Option<(i64, i64)> = sqlx::query_as(
@@ -427,7 +417,7 @@ pub async fn get_subscription(
         FROM usage_records
         WHERE org_id = $1
           AND period_start >= date_trunc('month', CURRENT_DATE)
-        "#
+        "#,
     )
     .bind(org_id)
     .fetch_optional(&state.pool)
@@ -579,17 +569,21 @@ pub async fn list_orgs(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(orgs.into_iter().map(|org| OrgResponse {
-        id: org.id,
-        name: org.name,
-        slug: org.slug,
-        auto_subdomain: org.auto_subdomain,
-        custom_subdomain: org.custom_subdomain,
-        subscription_tier: org.subscription_tier,
-        settings: org.settings,
-        created_at: org.created_at,
-        updated_at: org.updated_at,
-    }).collect()))
+    Ok(Json(
+        orgs.into_iter()
+            .map(|org| OrgResponse {
+                id: org.id,
+                name: org.name,
+                slug: org.slug,
+                auto_subdomain: org.auto_subdomain,
+                custom_subdomain: org.custom_subdomain,
+                subscription_tier: org.subscription_tier,
+                settings: org.settings,
+                created_at: org.created_at,
+                updated_at: org.updated_at,
+            })
+            .collect(),
+    ))
 }
 
 /// Create a new organization
@@ -604,33 +598,37 @@ pub async fn create_org(
     // Validate input
     if req.name.trim().is_empty() || req.name.len() > 100 {
         return Err(ApiError::Validation(
-            "Organization name must be between 1 and 100 characters".to_string()
+            "Organization name must be between 1 and 100 characters".to_string(),
         ));
     }
 
     if req.slug.trim().is_empty() || req.slug.len() > 50 {
         return Err(ApiError::Validation(
-            "Organization slug must be between 1 and 50 characters".to_string()
+            "Organization slug must be between 1 and 50 characters".to_string(),
         ));
     }
 
     // Validate slug format (lowercase, alphanumeric, hyphens)
-    if !req.slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !req
+        .slug
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         return Err(ApiError::Validation(
-            "Slug must contain only lowercase letters, numbers, and hyphens".to_string()
+            "Slug must contain only lowercase letters, numbers, and hyphens".to_string(),
         ));
     }
 
     // Check if slug is already taken
-    let existing: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM organizations WHERE slug = $1"
-    )
-    .bind(&req.slug)
-    .fetch_optional(&state.pool)
-    .await?;
+    let existing: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM organizations WHERE slug = $1")
+        .bind(&req.slug)
+        .fetch_optional(&state.pool)
+        .await?;
 
     if existing.is_some() {
-        return Err(ApiError::Conflict("An organization with this slug already exists".to_string()));
+        return Err(ApiError::Conflict(
+            "An organization with this slug already exists".to_string(),
+        ));
     }
 
     // Start transaction
@@ -655,7 +653,7 @@ pub async fn create_org(
         r#"
         INSERT INTO organization_members (id, org_id, user_id, role, created_at)
         VALUES ($1, $2, $3, 'owner', NOW())
-        "#
+        "#,
     )
     .bind(Uuid::new_v4())
     .bind(org_id)
@@ -698,28 +696,31 @@ fn validate_custom_subdomain(subdomain: &str) -> Result<(), ApiError> {
     // Length: 3-50 characters
     if subdomain.len() < 3 || subdomain.len() > 50 {
         return Err(ApiError::Validation(
-            "Subdomain must be between 3 and 50 characters".to_string()
+            "Subdomain must be between 3 and 50 characters".to_string(),
         ));
     }
 
     // Format: lowercase letters, numbers, hyphens only
-    if !subdomain.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+    if !subdomain
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
         return Err(ApiError::Validation(
-            "Subdomain can only contain lowercase letters, numbers, and hyphens".to_string()
+            "Subdomain can only contain lowercase letters, numbers, and hyphens".to_string(),
         ));
     }
 
     // No starting/ending hyphen
     if subdomain.starts_with('-') || subdomain.ends_with('-') {
         return Err(ApiError::Validation(
-            "Subdomain cannot start or end with a hyphen".to_string()
+            "Subdomain cannot start or end with a hyphen".to_string(),
         ));
     }
 
     // No consecutive hyphens
     if subdomain.contains("--") {
         return Err(ApiError::Validation(
-            "Subdomain cannot contain consecutive hyphens".to_string()
+            "Subdomain cannot contain consecutive hyphens".to_string(),
         ));
     }
 

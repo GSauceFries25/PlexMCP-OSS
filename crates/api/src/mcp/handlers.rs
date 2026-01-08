@@ -98,7 +98,11 @@ impl McpTrackedResponse {
 
 impl McpProxyHandler {
     /// Create a new proxy handler with shared MCP client
-    pub fn new(pool: PgPool, config: Arc<crate::config::Config>, mcp_client: Arc<McpClient>) -> Self {
+    pub fn new(
+        pool: PgPool,
+        config: Arc<crate::config::Config>,
+        mcp_client: Arc<McpClient>,
+    ) -> Self {
         Self {
             client: mcp_client,
             router: McpRouter::new(),
@@ -119,7 +123,7 @@ impl McpProxyHandler {
                         code: -32603, // Internal error
                         message: format!("Serialization error: {}", e),
                         data: None,
-                    }
+                    },
                 )
             }
         }
@@ -295,10 +299,15 @@ impl McpProxyHandler {
         request: JsonRpcRequest,
     ) -> McpTrackedResponse {
         // Delegate to filtered handler with no filter (all MCPs accessible)
-        self.handle_request_filtered(org_id, request, McpFilter {
-            mode: "all".to_string(),
-            allowed_ids: None,
-        }).await
+        self.handle_request_filtered(
+            org_id,
+            request,
+            McpFilter {
+                mode: "all".to_string(),
+                allowed_ids: None,
+            },
+        )
+        .await
     }
 
     /// Handle an incoming MCP request with MCP access filtering
@@ -319,17 +328,26 @@ impl McpProxyHandler {
                 // Notifications don't get responses, no MCP interaction
                 McpTrackedResponse::without_mcps(JsonRpcResponse::success(None, Value::Null))
             }
-            McpMethod::ToolsList => self.handle_tools_list_filtered(org_id, request.id, &filter).await,
+            McpMethod::ToolsList => {
+                self.handle_tools_list_filtered(org_id, request.id, &filter)
+                    .await
+            }
             McpMethod::ToolsCall => {
                 self.handle_tools_call_filtered(org_id, request.id, request.params, &filter)
                     .await
             }
-            McpMethod::ResourcesList => self.handle_resources_list_filtered(org_id, request.id, &filter).await,
+            McpMethod::ResourcesList => {
+                self.handle_resources_list_filtered(org_id, request.id, &filter)
+                    .await
+            }
             McpMethod::ResourcesRead => {
                 self.handle_resources_read_filtered(org_id, request.id, request.params, &filter)
                     .await
             }
-            McpMethod::PromptsList => self.handle_prompts_list_filtered(org_id, request.id, &filter).await,
+            McpMethod::PromptsList => {
+                self.handle_prompts_list_filtered(org_id, request.id, &filter)
+                    .await
+            }
             McpMethod::PromptsGet => {
                 self.handle_prompts_get_filtered(org_id, request.id, request.params, &filter)
                     .await
@@ -363,25 +381,33 @@ impl McpProxyHandler {
             ),
         };
 
-        McpTrackedResponse::without_mcps(
-            Self::success_response(id, &result)
-        )
+        McpTrackedResponse::without_mcps(Self::success_response(id, &result))
     }
 
     /// Handle tools/list - aggregate tools from all MCPs
     #[allow(dead_code)] // Reserved for direct MCP protocol use
     async fn handle_tools_list(&self, org_id: Uuid, id: Option<JsonRpcId>) -> McpTrackedResponse {
-        self.handle_tools_list_filtered(org_id, id, &McpFilter {
-            mode: "all".to_string(),
-            allowed_ids: None,
-        }).await
+        self.handle_tools_list_filtered(
+            org_id,
+            id,
+            &McpFilter {
+                mode: "all".to_string(),
+                allowed_ids: None,
+            },
+        )
+        .await
     }
 
     /// Handle tools/list with MCP filtering
     ///
     /// Aggregates tools from all accessible MCPs. Creates one usage record
     /// per MCP for accurate analytics breakdown.
-    async fn handle_tools_list_filtered(&self, org_id: Uuid, id: Option<JsonRpcId>, filter: &McpFilter) -> McpTrackedResponse {
+    async fn handle_tools_list_filtered(
+        &self,
+        org_id: Uuid,
+        id: Option<JsonRpcId>,
+        filter: &McpFilter,
+    ) -> McpTrackedResponse {
         let mcps = match self.load_mcps_filtered(org_id, Some(filter)).await {
             Ok(m) => m,
             Err(e) => {
@@ -414,7 +440,8 @@ impl McpProxyHandler {
 
         for mcp in mcps.iter() {
             // Use per-MCP partial timeout if set, otherwise global default
-            let timeout_ms = mcp.partial_timeout_ms
+            let timeout_ms = mcp
+                .partial_timeout_ms
                 .map(|t| t as u64)
                 .unwrap_or(self.config.mcp_partial_timeout_ms);
 
@@ -430,8 +457,9 @@ impl McpProxyHandler {
                 // Apply timeout to individual MCP request with circuit breaker
                 let result = tokio::time::timeout(
                     Duration::from_millis(timeout_ms),
-                    client.get_tools_with_breaker(mcp_id_uuid, &transport, &mcp_id)
-                ).await;
+                    client.get_tools_with_breaker(mcp_id_uuid, &transport, &mcp_id),
+                )
+                .await;
 
                 let elapsed = start.elapsed();
 
@@ -453,7 +481,7 @@ impl McpProxyHandler {
                         );
                         Err(McpError {
                             mcp_name: mcp_name.clone(),
-                            error: e.to_string()
+                            error: e.to_string(),
                         })
                     }
                     Err(_) => {
@@ -464,7 +492,7 @@ impl McpProxyHandler {
                         );
                         Err(McpError {
                             mcp_name: mcp_name.clone(),
-                            error: format!("Timeout after {}ms", timeout_ms)
+                            error: format!("Timeout after {}ms", timeout_ms),
                         })
                     }
                 }
@@ -495,10 +523,7 @@ impl McpProxyHandler {
         };
 
         // Return with all MCP IDs that were queried (for per-MCP usage tracking)
-        McpTrackedResponse::with_mcps(
-            Self::success_response(id, &result),
-            accessed_mcp_ids,
-        )
+        McpTrackedResponse::with_mcps(Self::success_response(id, &result), accessed_mcp_ids)
     }
 
     /// Handle tools/call - route to specific MCP
@@ -509,10 +534,16 @@ impl McpProxyHandler {
         id: Option<JsonRpcId>,
         params: Option<Value>,
     ) -> McpTrackedResponse {
-        self.handle_tools_call_filtered(org_id, id, params, &McpFilter {
-            mode: "all".to_string(),
-            allowed_ids: None,
-        }).await
+        self.handle_tools_call_filtered(
+            org_id,
+            id,
+            params,
+            &McpFilter {
+                mode: "all".to_string(),
+                allowed_ids: None,
+            },
+        )
+        .await
     }
 
     /// Handle tools/call with MCP filtering
@@ -628,18 +659,32 @@ impl McpProxyHandler {
 
     /// Handle resources/list - aggregate resources from all MCPs
     #[allow(dead_code)] // Reserved for direct MCP protocol use
-    async fn handle_resources_list(&self, org_id: Uuid, id: Option<JsonRpcId>) -> McpTrackedResponse {
-        self.handle_resources_list_filtered(org_id, id, &McpFilter {
-            mode: "all".to_string(),
-            allowed_ids: None,
-        }).await
+    async fn handle_resources_list(
+        &self,
+        org_id: Uuid,
+        id: Option<JsonRpcId>,
+    ) -> McpTrackedResponse {
+        self.handle_resources_list_filtered(
+            org_id,
+            id,
+            &McpFilter {
+                mode: "all".to_string(),
+                allowed_ids: None,
+            },
+        )
+        .await
     }
 
     /// Handle resources/list with MCP filtering
     ///
     /// Aggregates resources from all accessible MCPs. Creates one usage record
     /// per MCP for accurate analytics breakdown.
-    async fn handle_resources_list_filtered(&self, org_id: Uuid, id: Option<JsonRpcId>, filter: &McpFilter) -> McpTrackedResponse {
+    async fn handle_resources_list_filtered(
+        &self,
+        org_id: Uuid,
+        id: Option<JsonRpcId>,
+        filter: &McpFilter,
+    ) -> McpTrackedResponse {
         let mcps = match self.load_mcps_filtered(org_id, Some(filter)).await {
             Ok(m) => m,
             Err(e) => {
@@ -671,7 +716,8 @@ impl McpProxyHandler {
         let mut tasks = FuturesUnordered::new();
 
         for mcp in mcps.iter() {
-            let timeout_ms = mcp.partial_timeout_ms
+            let timeout_ms = mcp
+                .partial_timeout_ms
                 .map(|t| t as u64)
                 .unwrap_or(self.config.mcp_partial_timeout_ms);
 
@@ -686,8 +732,9 @@ impl McpProxyHandler {
 
                 let result = tokio::time::timeout(
                     Duration::from_millis(timeout_ms),
-                    client.get_resources_with_breaker(mcp_id_uuid, &transport, &mcp_id)
-                ).await;
+                    client.get_resources_with_breaker(mcp_id_uuid, &transport, &mcp_id),
+                )
+                .await;
 
                 let elapsed = start.elapsed();
 
@@ -705,14 +752,14 @@ impl McpProxyHandler {
                         tracing::error!(mcp = %mcp_name, error = %e, "MCP error");
                         Err(McpError {
                             mcp_name: mcp_name.clone(),
-                            error: e.to_string()
+                            error: e.to_string(),
                         })
                     }
                     Err(_) => {
                         tracing::warn!(mcp = %mcp_name, timeout_ms = timeout_ms, "MCP timeout");
                         Err(McpError {
                             mcp_name: mcp_name.clone(),
-                            error: format!("Timeout after {}ms", timeout_ms)
+                            error: format!("Timeout after {}ms", timeout_ms),
                         })
                     }
                 }
@@ -741,10 +788,7 @@ impl McpProxyHandler {
         };
 
         // Return with all MCP IDs that were queried (for per-MCP usage tracking)
-        McpTrackedResponse::with_mcps(
-            Self::success_response(id, &result),
-            accessed_mcp_ids,
-        )
+        McpTrackedResponse::with_mcps(Self::success_response(id, &result), accessed_mcp_ids)
     }
 
     /// Handle resources/read - route to specific MCP
@@ -755,10 +799,16 @@ impl McpProxyHandler {
         id: Option<JsonRpcId>,
         params: Option<Value>,
     ) -> McpTrackedResponse {
-        self.handle_resources_read_filtered(org_id, id, params, &McpFilter {
-            mode: "all".to_string(),
-            allowed_ids: None,
-        }).await
+        self.handle_resources_read_filtered(
+            org_id,
+            id,
+            params,
+            &McpFilter {
+                mode: "all".to_string(),
+                allowed_ids: None,
+            },
+        )
+        .await
     }
 
     /// Handle resources/read with MCP filtering
@@ -870,17 +920,27 @@ impl McpProxyHandler {
     /// Handle prompts/list - aggregate prompts from all MCPs
     #[allow(dead_code)] // Reserved for direct MCP protocol use
     async fn handle_prompts_list(&self, org_id: Uuid, id: Option<JsonRpcId>) -> McpTrackedResponse {
-        self.handle_prompts_list_filtered(org_id, id, &McpFilter {
-            mode: "all".to_string(),
-            allowed_ids: None,
-        }).await
+        self.handle_prompts_list_filtered(
+            org_id,
+            id,
+            &McpFilter {
+                mode: "all".to_string(),
+                allowed_ids: None,
+            },
+        )
+        .await
     }
 
     /// Handle prompts/list with MCP filtering
     ///
     /// Aggregates prompts from all accessible MCPs. Creates one usage record
     /// per MCP for accurate analytics breakdown.
-    async fn handle_prompts_list_filtered(&self, org_id: Uuid, id: Option<JsonRpcId>, filter: &McpFilter) -> McpTrackedResponse {
+    async fn handle_prompts_list_filtered(
+        &self,
+        org_id: Uuid,
+        id: Option<JsonRpcId>,
+        filter: &McpFilter,
+    ) -> McpTrackedResponse {
         let mcps = match self.load_mcps_filtered(org_id, Some(filter)).await {
             Ok(m) => m,
             Err(e) => {
@@ -911,7 +971,8 @@ impl McpProxyHandler {
         let mut tasks = FuturesUnordered::new();
 
         for mcp in mcps.iter() {
-            let timeout_ms = mcp.partial_timeout_ms
+            let timeout_ms = mcp
+                .partial_timeout_ms
                 .map(|t| t as u64)
                 .unwrap_or(self.config.mcp_partial_timeout_ms);
 
@@ -926,8 +987,9 @@ impl McpProxyHandler {
 
                 let result = tokio::time::timeout(
                     Duration::from_millis(timeout_ms),
-                    client.get_prompts_with_breaker(mcp_id_uuid, &transport, &mcp_id)
-                ).await;
+                    client.get_prompts_with_breaker(mcp_id_uuid, &transport, &mcp_id),
+                )
+                .await;
 
                 let elapsed = start.elapsed();
 
@@ -945,14 +1007,14 @@ impl McpProxyHandler {
                         tracing::error!(mcp = %mcp_name, error = %e, "MCP error");
                         Err(McpError {
                             mcp_name: mcp_name.clone(),
-                            error: e.to_string()
+                            error: e.to_string(),
                         })
                     }
                     Err(_) => {
                         tracing::warn!(mcp = %mcp_name, timeout_ms = timeout_ms, "MCP timeout");
                         Err(McpError {
                             mcp_name: mcp_name.clone(),
-                            error: format!("Timeout after {}ms", timeout_ms)
+                            error: format!("Timeout after {}ms", timeout_ms),
                         })
                     }
                 }
@@ -981,10 +1043,7 @@ impl McpProxyHandler {
         };
 
         // Return with all MCP IDs that were queried (for per-MCP usage tracking)
-        McpTrackedResponse::with_mcps(
-            Self::success_response(id, &result),
-            accessed_mcp_ids,
-        )
+        McpTrackedResponse::with_mcps(Self::success_response(id, &result), accessed_mcp_ids)
     }
 
     /// Handle prompts/get - route to specific MCP
@@ -995,10 +1054,16 @@ impl McpProxyHandler {
         id: Option<JsonRpcId>,
         params: Option<Value>,
     ) -> McpTrackedResponse {
-        self.handle_prompts_get_filtered(org_id, id, params, &McpFilter {
-            mode: "all".to_string(),
-            allowed_ids: None,
-        }).await
+        self.handle_prompts_get_filtered(
+            org_id,
+            id,
+            params,
+            &McpFilter {
+                mode: "all".to_string(),
+                allowed_ids: None,
+            },
+        )
+        .await
     }
 
     /// Handle prompts/get with MCP filtering
@@ -1090,10 +1155,7 @@ impl McpProxyHandler {
         {
             Ok(result) => {
                 // Success - track the single MCP that was called
-                McpTrackedResponse::with_single_mcp(
-                    Self::success_response(id, &result),
-                    mcp_id,
-                )
+                McpTrackedResponse::with_single_mcp(Self::success_response(id, &result), mcp_id)
             }
             Err(e) => {
                 // Error during prompt get - still track the MCP (it was accessed)

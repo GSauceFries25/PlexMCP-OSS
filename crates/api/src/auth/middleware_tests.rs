@@ -9,9 +9,9 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::middleware::*;
-    use super::super::jwt::JwtManager;
     use super::super::api_key::ApiKeyManager;
+    use super::super::jwt::JwtManager;
+    use super::super::middleware::*;
     use sqlx::PgPool;
     use std::sync::Arc;
     use uuid::Uuid;
@@ -179,9 +179,8 @@ mod tests {
         let manager = ApiKeyManager::new("test-secret");
 
         // Generate a new key
-        let (full_key, _hash, _prefix) = manager
-            .generate_key()
-            .expect("Failed to generate API key");
+        let (full_key, _hash, _prefix) =
+            manager.generate_key().expect("Failed to generate API key");
 
         // Validate the key
         let is_valid = manager
@@ -209,15 +208,14 @@ mod tests {
 
         assert_eq!(AuthMethod::Jwt, AuthMethod::Jwt);
         assert_eq!(AuthMethod::SupabaseJwt, AuthMethod::SupabaseJwt);
-        assert_eq!(
-            AuthMethod::ApiKey { key_id },
-            AuthMethod::ApiKey { key_id }
-        );
+        assert_eq!(AuthMethod::ApiKey { key_id }, AuthMethod::ApiKey { key_id });
 
         assert_ne!(AuthMethod::Jwt, AuthMethod::SupabaseJwt);
         assert_ne!(
             AuthMethod::ApiKey { key_id },
-            AuthMethod::ApiKey { key_id: Uuid::new_v4() }
+            AuthMethod::ApiKey {
+                key_id: Uuid::new_v4()
+            }
         );
     }
 

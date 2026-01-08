@@ -67,9 +67,20 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code, message) = match &self {
             // Authentication
-            ApiError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS", self.to_string()),
-            ApiError::Invalid2FACode => (StatusCode::UNAUTHORIZED, "INVALID_2FA_CODE", "Invalid verification code. Please check your authenticator app and try again.".to_string()),
-            ApiError::EmailAlreadyExists => (StatusCode::CONFLICT, "EMAIL_EXISTS", self.to_string()),
+            ApiError::InvalidCredentials => (
+                StatusCode::UNAUTHORIZED,
+                "INVALID_CREDENTIALS",
+                self.to_string(),
+            ),
+            ApiError::Invalid2FACode => (
+                StatusCode::UNAUTHORIZED,
+                "INVALID_2FA_CODE",
+                "Invalid verification code. Please check your authenticator app and try again."
+                    .to_string(),
+            ),
+            ApiError::EmailAlreadyExists => {
+                (StatusCode::CONFLICT, "EMAIL_EXISTS", self.to_string())
+            }
             ApiError::InvalidToken => (StatusCode::UNAUTHORIZED, "INVALID_TOKEN", self.to_string()),
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", self.to_string()),
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "FORBIDDEN", self.to_string()),
@@ -81,22 +92,60 @@ impl IntoResponse for ApiError {
             // Resources
             ApiError::NotFound => (StatusCode::NOT_FOUND, "NOT_FOUND", self.to_string()),
             ApiError::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg.clone()),
-            ApiError::NoOrganization => (StatusCode::BAD_REQUEST, "NO_ORGANIZATION", "No organization found. Please create an organization first.".to_string()),
+            ApiError::NoOrganization => (
+                StatusCode::BAD_REQUEST,
+                "NO_ORGANIZATION",
+                "No organization found. Please create an organization first.".to_string(),
+            ),
 
             // Rate limiting
-            ApiError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", self.to_string()),
-            ApiError::TooManyRequests(msg) => (StatusCode::TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS", msg.clone()),
+            ApiError::RateLimited => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "RATE_LIMITED",
+                self.to_string(),
+            ),
+            ApiError::TooManyRequests(msg) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "TOO_MANY_REQUESTS",
+                msg.clone(),
+            ),
 
             // Billing
-            ApiError::SubscriptionRequired => (StatusCode::PAYMENT_REQUIRED, "SUBSCRIPTION_REQUIRED", self.to_string()),
-            ApiError::UsageLimitExceeded => (StatusCode::PAYMENT_REQUIRED, "USAGE_LIMIT_EXCEEDED", self.to_string()),
-            ApiError::PaymentRequired => (StatusCode::PAYMENT_REQUIRED, "PAYMENT_REQUIRED", self.to_string()),
-            ApiError::QuotaExceeded(msg) => (StatusCode::PAYMENT_REQUIRED, "QUOTA_EXCEEDED", msg.clone()),
+            ApiError::SubscriptionRequired => (
+                StatusCode::PAYMENT_REQUIRED,
+                "SUBSCRIPTION_REQUIRED",
+                self.to_string(),
+            ),
+            ApiError::UsageLimitExceeded => (
+                StatusCode::PAYMENT_REQUIRED,
+                "USAGE_LIMIT_EXCEEDED",
+                self.to_string(),
+            ),
+            ApiError::PaymentRequired => (
+                StatusCode::PAYMENT_REQUIRED,
+                "PAYMENT_REQUIRED",
+                self.to_string(),
+            ),
+            ApiError::QuotaExceeded(msg) => {
+                (StatusCode::PAYMENT_REQUIRED, "QUOTA_EXCEEDED", msg.clone())
+            }
 
             // Internal
-            ApiError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "DATABASE_ERROR", "Database error".to_string()),
-            ApiError::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", self.to_string()),
-            ApiError::ServiceUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE", self.to_string()),
+            ApiError::Database(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "DATABASE_ERROR",
+                "Database error".to_string(),
+            ),
+            ApiError::Internal => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                self.to_string(),
+            ),
+            ApiError::ServiceUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "SERVICE_UNAVAILABLE",
+                self.to_string(),
+            ),
         };
 
         let body = Json(json!({

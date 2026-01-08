@@ -44,7 +44,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Validate password strength (basic check)
     if password.len() < 12 {
-        eprintln!("Warning: Password is less than 12 characters. Consider using a longer password.");
+        eprintln!(
+            "Warning: Password is less than 12 characters. Consider using a longer password."
+        );
     }
 
     // Generate salt
@@ -67,7 +69,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("1. Copy the hash above");
     println!("2. Store it in the 'password_hash' column of the 'users' table");
     println!("\nExample SQL:");
-    println!("UPDATE users SET password_hash = '{}' WHERE email = 'admin@example.com';", password_hash);
+    println!(
+        "UPDATE users SET password_hash = '{}' WHERE email = 'admin@example.com';",
+        password_hash
+    );
 
     Ok(())
 }

@@ -73,7 +73,11 @@ impl JwtManager {
     }
 
     /// Create a new JWT manager with Supabase JWT secret
-    pub fn with_supabase_secret(secret: &str, supabase_secret: &str, access_token_expiry_hours: i64) -> Self {
+    pub fn with_supabase_secret(
+        secret: &str,
+        supabase_secret: &str,
+        access_token_expiry_hours: i64,
+    ) -> Self {
         Self {
             encoding_key: EncodingKey::from_secret(secret.as_bytes()),
             decoding_key: DecodingKey::from_secret(secret.as_bytes()),
@@ -156,8 +160,10 @@ impl JwtManager {
         role: &str,
         email: &str,
     ) -> Result<(String, String, String, String), JwtError> {
-        let (access_token, access_jti) = self.generate_access_token(user_id, org_id, role, email)?;
-        let (refresh_token, refresh_jti) = self.generate_refresh_token(user_id, org_id, role, email)?;
+        let (access_token, access_jti) =
+            self.generate_access_token(user_id, org_id, role, email)?;
+        let (refresh_token, refresh_jti) =
+            self.generate_refresh_token(user_id, org_id, role, email)?;
         Ok((access_token, access_jti, refresh_token, refresh_jti))
     }
 
@@ -204,12 +210,16 @@ impl JwtManager {
     /// Returns the user ID and email if valid
     /// SOC 2 CC6.1: Explicit algorithm and audience validation
     pub fn validate_supabase_token(&self, token: &str) -> Result<SupabaseClaims, JwtError> {
-        let decoding_key = self.supabase_decoding_key.as_ref()
-            .ok_or(JwtError::Validation("Supabase JWT secret not configured".to_string()))?;
+        let decoding_key = self
+            .supabase_decoding_key
+            .as_ref()
+            .ok_or(JwtError::Validation(
+                "Supabase JWT secret not configured".to_string(),
+            ))?;
 
         let mut validation = Validation::new(Algorithm::HS256);
         validation.leeway = 60; // 60 second clock skew tolerance
-        // Supabase uses "authenticated" as the audience
+                                // Supabase uses "authenticated" as the audience
         validation.set_audience(&["authenticated"]);
 
         match decode::<SupabaseClaims>(token, decoding_key, &validation) {
@@ -224,7 +234,7 @@ impl JwtManager {
                     Err(JwtError::Invalid)
                 }
                 _ => Err(JwtError::Validation(e.to_string())),
-            }
+            },
         }
     }
 
@@ -263,7 +273,9 @@ mod tests {
             .expect("Failed to generate tokens");
 
         // Validate access token
-        let access_claims = jwt.validate_access_token(&access_token).expect("Invalid access token");
+        let access_claims = jwt
+            .validate_access_token(&access_token)
+            .expect("Invalid access token");
         assert_eq!(access_claims.sub, user_id);
         assert_eq!(access_claims.org_id, org_id);
         assert_eq!(access_claims.token_type, TokenType::Access);
@@ -271,7 +283,9 @@ mod tests {
         assert!(!access_claims.jti.is_empty());
 
         // Validate refresh token
-        let refresh_claims = jwt.validate_refresh_token(&refresh_token).expect("Invalid refresh token");
+        let refresh_claims = jwt
+            .validate_refresh_token(&refresh_token)
+            .expect("Invalid refresh token");
         assert_eq!(refresh_claims.sub, user_id);
         assert_eq!(refresh_claims.token_type, TokenType::Refresh);
         assert_eq!(refresh_claims.jti, refresh_jti);

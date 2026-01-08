@@ -1,9 +1,9 @@
 //! Application state
 
-use std::sync::Arc;
+use maxminddb::Reader;
 use reqwest::Client;
 use sqlx::PgPool;
-use maxminddb::Reader;
+use std::sync::Arc;
 
 use crate::{
     alerting::AlertService,
@@ -86,7 +86,7 @@ impl AppState {
             JwtManager::with_supabase_secret(
                 &config.jwt_secret,
                 &config.supabase_jwt_secret,
-                config.jwt_expiry_hours
+                config.jwt_expiry_hours,
             )
         } else {
             tracing::warn!("Supabase JWT validation not configured (missing SUPABASE_JWT_SECRET)");
@@ -122,7 +122,10 @@ impl AppState {
             if config.supabase_anon_key.is_empty() {
                 tracing::warn!("Supabase URL configured but SUPABASE_ANON_KEY is missing - API token verification will fail");
             } else {
-                tracing::info!("Supabase API verification enabled via {}", config.supabase_url);
+                tracing::info!(
+                    "Supabase API verification enabled via {}",
+                    config.supabase_url
+                );
             }
         }
 
@@ -136,17 +139,20 @@ impl AppState {
 
         // Initialize host resolver for subdomain/custom domain routing
         let host_resolver = HostResolver::new(pool.clone(), config.base_domain.clone());
-        tracing::info!("Host resolver initialized for base domain: {}", config.base_domain);
+        tracing::info!(
+            "Host resolver initialized for base domain: {}",
+            config.base_domain
+        );
 
         // Initialize Fly.io client for SSL provisioning
-        let fly_client = FlyClient::from_config(
-            config.fly_api_token.clone(),
-            config.fly_app_name.clone(),
-        );
+        let fly_client =
+            FlyClient::from_config(config.fly_api_token.clone(), config.fly_app_name.clone());
         if fly_client.is_some() {
             tracing::info!("Fly.io SSL provisioning enabled");
         } else {
-            tracing::warn!("Fly.io SSL provisioning not configured (missing FLY_API_TOKEN or FLY_APP_NAME)");
+            tracing::warn!(
+                "Fly.io SSL provisioning not configured (missing FLY_API_TOKEN or FLY_APP_NAME)"
+            );
         }
 
         // Initialize WebSocket state
@@ -191,7 +197,8 @@ impl AppState {
         tracing::info!("Supabase token cache initialized");
 
         // Initialize in-flight requests map for request coalescing
-        let in_flight_requests = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+        let in_flight_requests =
+            Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
         tracing::info!("Request coalescing initialized for Supabase verification");
 
         Self {

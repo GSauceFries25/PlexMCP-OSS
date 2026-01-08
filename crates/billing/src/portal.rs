@@ -1,8 +1,6 @@
 //! Stripe Billing Portal
 
-use stripe::{
-    BillingPortalSession, CreateBillingPortalSession, CustomerId,
-};
+use stripe::{BillingPortalSession, CreateBillingPortalSession, CustomerId};
 use uuid::Uuid;
 
 use crate::client::StripeClient;
@@ -24,13 +22,11 @@ impl PortalService {
         org_id: Uuid,
         customer_id: &str,
     ) -> BillingResult<BillingPortalSession> {
-        let customer_id = customer_id.parse::<CustomerId>()
+        let customer_id = customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
-        let return_url = format!(
-            "{}/billing",
-            self.stripe.config().app_base_url
-        );
+        let return_url = format!("{}/billing", self.stripe.config().app_base_url);
 
         let mut params = CreateBillingPortalSession::new(customer_id);
         params.return_url = Some(&return_url);
@@ -55,8 +51,6 @@ pub struct PortalResponse {
 
 impl From<BillingPortalSession> for PortalResponse {
     fn from(session: BillingPortalSession) -> Self {
-        Self {
-            url: session.url,
-        }
+        Self { url: session.url }
     }
 }

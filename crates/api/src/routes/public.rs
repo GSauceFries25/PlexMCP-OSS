@@ -18,13 +18,7 @@ use crate::{
 // =============================================================================
 
 /// Company size options for enterprise inquiries
-const VALID_COMPANY_SIZES: &[&str] = &[
-    "1-10",
-    "11-50",
-    "51-200",
-    "201-500",
-    "500+",
-];
+const VALID_COMPANY_SIZES: &[&str] = &["1-10", "11-50", "51-200", "201-500", "500+"];
 
 #[derive(Debug, Deserialize)]
 pub struct EnterpriseInquiryRequest {
@@ -100,7 +94,9 @@ pub async fn submit_enterprise_inquiry(
     // Validate work email
     let work_email = req.work_email.trim().to_lowercase();
     if !is_valid_email(&work_email) {
-        return Err(ApiError::BadRequest("Please enter a valid email address".into()));
+        return Err(ApiError::BadRequest(
+            "Please enter a valid email address".into(),
+        ));
     }
 
     // Validate company size

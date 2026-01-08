@@ -8,11 +8,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{
-    auth::AuthUser,
-    error::ApiError,
-    state::AppState,
-};
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 /// Usage summary response
 #[derive(Debug, Serialize)]
@@ -87,10 +83,10 @@ pub async fn get_billing_usage(
         "get_billing_usage called"
     );
 
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
-    let usage = billing.usage
+    let usage = billing
+        .usage
         .get_billing_period_usage(org_id)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to get billing usage: {}", e)))?;
@@ -130,22 +126,28 @@ pub async fn get_usage_summary(
         "get_usage_summary: starting"
     );
 
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     // Default to current month if not specified
     let now = OffsetDateTime::now_utc();
-    let default_start = now.replace_day(1)
+    let default_start = now
+        .replace_day(1)
         .map_err(|e| ApiError::Database(format!("Failed to set start date: {}", e)))?
         .replace_time(time::Time::MIDNIGHT);
 
-    let start = query.start
+    let start = query
+        .start
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or(default_start);
-    let end = query.end
+    let end = query
+        .end
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or(now);
 
     tracing::info!(
@@ -155,7 +157,8 @@ pub async fn get_usage_summary(
         "get_usage_summary: querying with date range"
     );
 
-    let summary = billing.usage
+    let summary = billing
+        .usage
         .get_usage_summary(org_id, start, end)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to get usage summary: {}", e)))?;
@@ -185,35 +188,47 @@ pub async fn get_usage_by_api_key(
 ) -> Result<Json<Vec<ApiKeyUsageItem>>, ApiError> {
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     // Default to current month
     let now = OffsetDateTime::now_utc();
-    let default_start = now.replace_day(1)
+    let default_start = now
+        .replace_day(1)
         .map_err(|e| ApiError::Database(format!("Failed to set start date: {}", e)))?
         .replace_time(time::Time::MIDNIGHT);
 
-    let start = query.start
+    let start = query
+        .start
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or(default_start);
-    let end = query.end
+    let end = query
+        .end
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or(now);
 
-    let breakdown = billing.usage
+    let breakdown = billing
+        .usage
         .get_usage_by_api_key(org_id, start, end)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to get API key usage: {}", e)))?;
 
-    Ok(Json(breakdown.into_iter().map(|item| ApiKeyUsageItem {
-        api_key_id: item.api_key_id,
-        api_key_name: item.api_key_name,
-        request_count: item.request_count,
-        token_count: item.token_count,
-    }).collect()))
+    Ok(Json(
+        breakdown
+            .into_iter()
+            .map(|item| ApiKeyUsageItem {
+                api_key_id: item.api_key_id,
+                api_key_name: item.api_key_name,
+                request_count: item.request_count,
+                token_count: item.token_count,
+            })
+            .collect(),
+    ))
 }
 
 /// Get usage breakdown by MCP instance
@@ -224,37 +239,49 @@ pub async fn get_usage_by_mcp(
 ) -> Result<Json<Vec<McpUsageItem>>, ApiError> {
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     // Default to current month
     let now = OffsetDateTime::now_utc();
-    let default_start = now.replace_day(1)
+    let default_start = now
+        .replace_day(1)
         .map_err(|e| ApiError::Database(format!("Failed to set start date: {}", e)))?
         .replace_time(time::Time::MIDNIGHT);
 
-    let start = query.start
+    let start = query
+        .start
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or(default_start);
-    let end = query.end
+    let end = query
+        .end
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or(now);
 
-    let breakdown = billing.usage
+    let breakdown = billing
+        .usage
         .get_usage_by_mcp(org_id, start, end)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to get MCP usage: {}", e)))?;
 
-    Ok(Json(breakdown.into_iter().map(|item| McpUsageItem {
-        mcp_instance_id: item.mcp_instance_id,
-        mcp_name: item.mcp_name,
-        request_count: item.request_count,
-        token_count: item.token_count,
-        error_count: item.error_count,
-        avg_latency_ms: item.avg_latency_ms,
-    }).collect()))
+    Ok(Json(
+        breakdown
+            .into_iter()
+            .map(|item| McpUsageItem {
+                mcp_instance_id: item.mcp_instance_id,
+                mcp_name: item.mcp_name,
+                request_count: item.request_count,
+                token_count: item.token_count,
+                error_count: item.error_count,
+                avg_latency_ms: item.avg_latency_ms,
+            })
+            .collect(),
+    ))
 }
 
 /// Get hourly usage data for charts
@@ -265,31 +292,42 @@ pub async fn get_hourly_usage(
 ) -> Result<Json<Vec<HourlyUsageItem>>, ApiError> {
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     // Default to last 24 hours
     let now = OffsetDateTime::now_utc();
-    let start = query.start
+    let start = query
+        .start
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or_else(|| now - time::Duration::hours(24));
-    let end = query.end
+    let end = query
+        .end
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or(now);
 
-    let hourly = billing.usage
+    let hourly = billing
+        .usage
         .get_hourly_usage(org_id, start, end)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to get hourly usage: {}", e)))?;
 
-    Ok(Json(hourly.into_iter().map(|item| HourlyUsageItem {
-        hour: format_datetime(item.hour),
-        requests: item.requests,
-        tokens: item.tokens,
-        errors: item.errors,
-    }).collect()))
+    Ok(Json(
+        hourly
+            .into_iter()
+            .map(|item| HourlyUsageItem {
+                hour: format_datetime(item.hour),
+                requests: item.requests,
+                tokens: item.tokens,
+                errors: item.errors,
+            })
+            .collect(),
+    ))
 }
 
 /// Check if current usage is within limits
@@ -299,10 +337,10 @@ pub async fn check_usage_limit(
 ) -> Result<Json<UsageLimitCheck>, ApiError> {
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
-    let within_limit = billing.usage
+    let within_limit = billing
+        .usage
         .check_usage_limit(org_id)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to check usage limit: {}", e)))?;
@@ -363,26 +401,29 @@ pub async fn get_effective_limits(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<EffectiveLimitsResponse>, ApiError> {
-    let org_id = auth_user.org_id
+    let org_id = auth_user
+        .org_id
         .or(auth_user.user_id)
         .ok_or(ApiError::NoOrganization)?;
 
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     // Get the org's subscription tier
     let tier_result: Option<(String,)> = sqlx::query_as(
         "SELECT COALESCE(subscription_tier, 'free') as tier FROM organizations
          WHERE id = $1
-         LIMIT 1"
+         LIMIT 1",
     )
     .bind(org_id)
     .fetch_optional(&state.pool)
     .await
     .map_err(|e| ApiError::Database(format!("Database error: {}", e)))?;
 
-    let tier_str = tier_result.map(|(t,)| t).unwrap_or_else(|| "free".to_string());
-    let tier: plexmcp_shared::SubscriptionTier = tier_str.parse()
+    let tier_str = tier_result
+        .map(|(t,)| t)
+        .unwrap_or_else(|| "free".to_string());
+    let tier: plexmcp_shared::SubscriptionTier = tier_str
+        .parse()
         .unwrap_or(plexmcp_shared::SubscriptionTier::Free);
 
     // Get add-on quantities
@@ -397,25 +438,44 @@ pub async fn get_effective_limits(
         .map_err(|e| ApiError::Database(format!("Failed to get addon quantities: {}", e)))?;
 
     // Calculate effective limits
-    let is_unlimited = matches!(tier, plexmcp_shared::SubscriptionTier::Team | plexmcp_shared::SubscriptionTier::Enterprise);
+    let is_unlimited = matches!(
+        tier,
+        plexmcp_shared::SubscriptionTier::Team | plexmcp_shared::SubscriptionTier::Enterprise
+    );
 
     let base_requests = tier.monthly_requests();
     // NOTE: Request pack addons are deprecated (Dec 2024) - only custom_domain addon is active
     // Setting addon_requests to 0 to prevent showing inflated limits from deprecated addons
     let addon_requests = 0u64;
-    let effective_requests = if base_requests == u64::MAX { u64::MAX } else { base_requests + addon_requests };
+    let effective_requests = if base_requests == u64::MAX {
+        u64::MAX
+    } else {
+        base_requests + addon_requests
+    };
 
     let base_mcps = tier.max_mcps();
     let addon_mcps = quantities.extra_mcps * 5;
-    let effective_mcps = if base_mcps == u32::MAX { u32::MAX } else { base_mcps + addon_mcps };
+    let effective_mcps = if base_mcps == u32::MAX {
+        u32::MAX
+    } else {
+        base_mcps + addon_mcps
+    };
 
     let base_api_keys = tier.max_api_keys();
     let addon_api_keys = quantities.extra_api_keys * 5;
-    let effective_api_keys = if base_api_keys == u32::MAX { u32::MAX } else { base_api_keys + addon_api_keys };
+    let effective_api_keys = if base_api_keys == u32::MAX {
+        u32::MAX
+    } else {
+        base_api_keys + addon_api_keys
+    };
 
     let base_team_members = tier.max_team_members();
     let addon_team_members = quantities.extra_team_members * 3;
-    let effective_team_members = if base_team_members == u32::MAX { u32::MAX } else { base_team_members + addon_team_members };
+    let effective_team_members = if base_team_members == u32::MAX {
+        u32::MAX
+    } else {
+        base_team_members + addon_team_members
+    };
 
     Ok(Json(EffectiveLimitsResponse {
         tier: tier.to_string(),
@@ -480,18 +540,33 @@ pub async fn get_recent_errors(
 
     // Default to last 7 days if not specified
     let now = OffsetDateTime::now_utc();
-    let start = query.start
+    let start = query
+        .start
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or_else(|| now - time::Duration::days(7));
-    let end = query.end
+    let end = query
+        .end
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or(now);
 
     // Query errors from mcp_proxy_logs for this org's API keys
     #[allow(clippy::type_complexity)]
-    let errors: Vec<(Uuid, String, Option<String>, Option<String>, String, Option<String>, Option<i32>, OffsetDateTime)> = sqlx::query_as(
+    let errors: Vec<(
+        Uuid,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<i32>,
+        OffsetDateTime,
+    )> = sqlx::query_as(
         r#"
         SELECT
             pl.id,
@@ -520,18 +595,34 @@ pub async fn get_recent_errors(
     .await
     .map_err(|e| ApiError::Database(format!("Failed to fetch errors: {}", e)))?;
 
-    Ok(Json(errors.into_iter().map(|(id, method, tool_name, resource_uri, status, error_message, latency_ms, created_at)| {
-        RecentErrorItem {
-            id,
-            method,
-            tool_name,
-            resource_uri,
-            status,
-            error_message,
-            latency_ms,
-            created_at: format_datetime(created_at),
-        }
-    }).collect()))
+    Ok(Json(
+        errors
+            .into_iter()
+            .map(
+                |(
+                    id,
+                    method,
+                    tool_name,
+                    resource_uri,
+                    status,
+                    error_message,
+                    latency_ms,
+                    created_at,
+                )| {
+                    RecentErrorItem {
+                        id,
+                        method,
+                        tool_name,
+                        resource_uri,
+                        status,
+                        error_message,
+                        latency_ms,
+                        created_at: format_datetime(created_at),
+                    }
+                },
+            )
+            .collect(),
+    ))
 }
 
 /// Latency bucket for distribution
@@ -562,13 +653,19 @@ pub async fn get_latency_distribution(
 
     // Default to last 7 days if not specified
     let now = OffsetDateTime::now_utc();
-    let start = query.start
+    let start = query
+        .start
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or_else(|| now - time::Duration::days(7));
-    let end = query.end
+    let end = query
+        .end
         .as_ref()
-        .and_then(|s| time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok())
+        .and_then(|s| {
+            time::OffsetDateTime::parse(s, &time::format_description::well_known::Rfc3339).ok()
+        })
         .unwrap_or(now);
 
     // First check if there's any data at all to avoid issues with empty aggregates
@@ -641,7 +738,10 @@ pub async fn get_latency_distribution(
         ApiError::Database(format!("Failed to fetch latency buckets: {}", e))
     })?;
 
-    tracing::debug!("get_latency_distribution: got {} buckets", bucket_counts.len());
+    tracing::debug!(
+        "get_latency_distribution: got {} buckets",
+        bucket_counts.len()
+    );
 
     // Get percentiles
     #[allow(clippy::type_complexity)]
@@ -675,14 +775,21 @@ pub async fn get_latency_distribution(
     let total_requests = total;
 
     // Build buckets with percentages
-    let buckets: Vec<LatencyBucket> = bucket_counts.into_iter().map(|(range, count)| {
-        let percentage = if total_requests > 0 {
-            (count as f64 / total_requests as f64) * 100.0
-        } else {
-            0.0
-        };
-        LatencyBucket { range, count, percentage }
-    }).collect();
+    let buckets: Vec<LatencyBucket> = bucket_counts
+        .into_iter()
+        .map(|(range, count)| {
+            let percentage = if total_requests > 0 {
+                (count as f64 / total_requests as f64) * 100.0
+            } else {
+                0.0
+            };
+            LatencyBucket {
+                range,
+                count,
+                percentage,
+            }
+        })
+        .collect();
 
     Ok(Json(LatencyDistributionResponse {
         buckets,

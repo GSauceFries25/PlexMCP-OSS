@@ -232,7 +232,8 @@ pub async fn create_domain(
     // Check if the custom_domain addon is enabled (only when billing feature is enabled)
     #[cfg(feature = "billing")]
     {
-        let addon_enabled = check_addon_enabled(&state.pool, user_id, AddonType::CustomDomain).await?;
+        let addon_enabled =
+            check_addon_enabled(&state.pool, user_id, AddonType::CustomDomain).await?;
         if !addon_enabled {
             return Err(ApiError::Forbidden);
         }
@@ -242,17 +243,15 @@ pub async fn create_domain(
     let domain = req.domain.trim().to_lowercase();
     if !is_valid_domain(&domain) {
         return Err(ApiError::BadRequest(
-            "Invalid domain format. Please enter a valid domain like 'mcp.yourcompany.com'".to_string(),
+            "Invalid domain format. Please enter a valid domain like 'mcp.yourcompany.com'"
+                .to_string(),
         ));
     }
 
     // Check if domain is already registered
-    let existing = sqlx::query_scalar!(
-        "SELECT id FROM custom_domains WHERE domain = $1",
-        domain
-    )
-    .fetch_optional(&state.pool)
-    .await?;
+    let existing = sqlx::query_scalar!("SELECT id FROM custom_domains WHERE domain = $1", domain)
+        .fetch_optional(&state.pool)
+        .await?;
 
     if existing.is_some() {
         return Err(ApiError::Conflict(
@@ -405,7 +404,12 @@ pub async fn verify_domain(
     let txt_record_name = domain.txt_record_name.clone();
 
     // Perform DNS verification
-    let (cname_valid, txt_valid) = verify_dns_records(&domain.domain, &domain.cname_target, &domain.verification_token).await;
+    let (cname_valid, txt_valid) = verify_dns_records(
+        &domain.domain,
+        &domain.cname_target,
+        &domain.verification_token,
+    )
+    .await;
     let dns_success = cname_valid && txt_valid;
 
     // If DNS verification succeeded, provision SSL certificate via Fly.io
@@ -415,7 +419,11 @@ pub async fn verify_domain(
                 match fly_client.add_certificate(&domain.domain).await {
                     Ok(_cert_info) => {
                         tracing::info!("SSL certificate provisioned for {}", domain.domain);
-                        (true, "DNS verification successful! SSL certificate has been provisioned.".to_string())
+                        (
+                            true,
+                            "DNS verification successful! SSL certificate has been provisioned."
+                                .to_string(),
+                        )
                     }
                     Err(e) => {
                         tracing::error!("Failed to provision SSL for {}: {}", domain.domain, e);
@@ -425,17 +433,30 @@ pub async fn verify_domain(
                 }
             }
             None => {
-                tracing::warn!("Fly.io client not configured - SSL must be provisioned manually for {}", domain.domain);
-                (false, "DNS verification successful! SSL certificate requires manual provisioning.".to_string())
+                tracing::warn!(
+                    "Fly.io client not configured - SSL must be provisioned manually for {}",
+                    domain.domain
+                );
+                (
+                    false,
+                    "DNS verification successful! SSL certificate requires manual provisioning."
+                        .to_string(),
+                )
             }
         }
     } else {
         let mut issues = Vec::new();
         if !cname_valid {
-            issues.push(format!("CNAME record not found or incorrect. Expected {} -> {}", domain.domain, domain.cname_target));
+            issues.push(format!(
+                "CNAME record not found or incorrect. Expected {} -> {}",
+                domain.domain, domain.cname_target
+            ));
         }
         if !txt_valid {
-            issues.push(format!("TXT record not found. Expected {} with value plexmcp-verify={}", txt_record_name, domain.verification_token));
+            issues.push(format!(
+                "TXT record not found. Expected {} with value plexmcp-verify={}",
+                txt_record_name, domain.verification_token
+            ));
         }
         (false, issues.join(". "))
     };
@@ -565,7 +586,11 @@ pub async fn toggle_domain(
 
 /// Check if an addon is enabled for the user (only available with billing feature)
 #[cfg(feature = "billing")]
-async fn check_addon_enabled(pool: &PgPool, user_id: Uuid, addon_type: AddonType) -> Result<bool, ApiError> {
+async fn check_addon_enabled(
+    pool: &PgPool,
+    user_id: Uuid,
+    addon_type: AddonType,
+) -> Result<bool, ApiError> {
     // Check subscription_addons table via user's org_id
     let result = sqlx::query_scalar!(
         r#"
@@ -635,11 +660,15 @@ fn generate_verification_token() -> String {
 
 /// Verify DNS records for a domain
 /// Returns (cname_valid, txt_valid)
-async fn verify_dns_records(domain: &str, expected_cname: &str, verification_token: &str) -> (bool, bool) {
-    use trust_dns_resolver::TokioAsyncResolver;
+async fn verify_dns_records(
+    domain: &str,
+    expected_cname: &str,
+    verification_token: &str,
+) -> (bool, bool) {
+    use std::collections::HashSet;
     use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
     use trust_dns_resolver::proto::rr::RecordType;
-    use std::collections::HashSet;
+    use trust_dns_resolver::TokioAsyncResolver;
 
     // Create resolver
     let resolver = TokioAsyncResolver::tokio(ResolverConfig::cloudflare(), ResolverOpts::default());
@@ -668,11 +697,10 @@ async fn verify_dns_records(domain: &str, expected_cname: &str, verification_tok
     } else {
         // Get A records for the domain
         let domain_ips: HashSet<String> = match resolver.lookup(domain, RecordType::A).await {
-            Ok(response) => {
-                response.iter().filter_map(|record| {
-                    record.as_a().map(|a| a.to_string())
-                }).collect()
-            }
+            Ok(response) => response
+                .iter()
+                .filter_map(|record| record.as_a().map(|a| a.to_string()))
+                .collect(),
             Err(_) => HashSet::new(),
         };
 
@@ -680,14 +708,14 @@ async fn verify_dns_records(domain: &str, expected_cname: &str, verification_tok
             false
         } else {
             // Get A records for the expected CNAME target
-            let target_ips: HashSet<String> = match resolver.lookup(expected_cname, RecordType::A).await {
-                Ok(response) => {
-                    response.iter().filter_map(|record| {
-                        record.as_a().map(|a| a.to_string())
-                    }).collect()
-                }
-                Err(_) => HashSet::new(),
-            };
+            let target_ips: HashSet<String> =
+                match resolver.lookup(expected_cname, RecordType::A).await {
+                    Ok(response) => response
+                        .iter()
+                        .filter_map(|record| record.as_a().map(|a| a.to_string()))
+                        .collect(),
+                    Err(_) => HashSet::new(),
+                };
 
             // Check if there's any overlap in IPs (ALIAS records should resolve to same IPs)
             !domain_ips.is_disjoint(&target_ips)
@@ -698,17 +726,15 @@ async fn verify_dns_records(domain: &str, expected_cname: &str, verification_tok
     let txt_record_name = format!("_plexmcp-verification.{}", domain);
     let expected_txt = format!("plexmcp-verify={}", verification_token);
     let txt_valid = match resolver.lookup(&txt_record_name, RecordType::TXT).await {
-        Ok(response) => {
-            response.iter().any(|record| {
-                if let Some(txt) = record.as_txt() {
-                    txt.txt_data().iter().any(|data| {
-                        String::from_utf8_lossy(data).eq(&expected_txt)
-                    })
-                } else {
-                    false
-                }
-            })
-        }
+        Ok(response) => response.iter().any(|record| {
+            if let Some(txt) = record.as_txt() {
+                txt.txt_data()
+                    .iter()
+                    .any(|data| String::from_utf8_lossy(data).eq(&expected_txt))
+            } else {
+                false
+            }
+        }),
         Err(_) => false,
     };
 

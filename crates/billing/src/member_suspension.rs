@@ -81,7 +81,10 @@ impl MemberSuspensionService {
     }
 
     /// Get member status summary for an organization
-    pub async fn get_member_status_summary(&self, org_id: Uuid) -> BillingResult<MemberStatusSummary> {
+    pub async fn get_member_status_summary(
+        &self,
+        org_id: Uuid,
+    ) -> BillingResult<MemberStatusSummary> {
         let result: (i64, i64, i64, i64) = sqlx::query_as(
             r#"
             SELECT
@@ -148,13 +151,15 @@ impl MemberSuspensionService {
 
         let members_to_suspend: Vec<MemberToSuspend> = members
             .into_iter()
-            .map(|(member_id, user_id, email, role, joined_at)| MemberToSuspend {
-                member_id,
-                user_id,
-                email,
-                role,
-                joined_at,
-            })
+            .map(
+                |(member_id, user_id, email, role, joined_at)| MemberToSuspend {
+                    member_id,
+                    user_id,
+                    email,
+                    role,
+                    joined_at,
+                },
+            )
             .collect();
 
         Ok(members_to_suspend)
@@ -266,29 +271,22 @@ impl MemberSuspensionService {
     }
 
     /// Unsuspend a specific member (owner action)
-    pub async fn unsuspend_member(
-        &self,
-        org_id: Uuid,
-        member_id: Uuid,
-    ) -> BillingResult<()> {
+    pub async fn unsuspend_member(&self, org_id: Uuid, member_id: Uuid) -> BillingResult<()> {
         // First check if org has room for another active member
         let active_count = self.get_active_member_count(org_id).await?;
 
         // Get org's current tier and limit
-        let tier_result: Option<(String,)> = sqlx::query_as(
-            "SELECT subscription_tier FROM organizations WHERE id = $1",
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let tier_result: Option<(String,)> =
+            sqlx::query_as("SELECT subscription_tier FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         let current_tier = tier_result
             .ok_or_else(|| BillingError::NotFound(format!("Organization not found: {}", org_id)))?
             .0;
 
-        let tier: SubscriptionTier = current_tier
-            .parse()
-            .unwrap_or(SubscriptionTier::Free);
+        let tier: SubscriptionTier = current_tier.parse().unwrap_or(SubscriptionTier::Free);
 
         let limit = tier.max_team_members();
 
@@ -332,11 +330,7 @@ impl MemberSuspensionService {
     }
 
     /// Check if a member is suspended
-    pub async fn is_member_suspended(
-        &self,
-        org_id: Uuid,
-        user_id: Uuid,
-    ) -> BillingResult<bool> {
+    pub async fn is_member_suspended(&self, org_id: Uuid, user_id: Uuid) -> BillingResult<bool> {
         let result: Option<(String,)> = sqlx::query_as(
             r#"
             SELECT status
@@ -374,13 +368,15 @@ impl MemberSuspensionService {
 
         let suspended: Vec<MemberToSuspend> = members
             .into_iter()
-            .map(|(member_id, user_id, email, role, joined_at)| MemberToSuspend {
-                member_id,
-                user_id,
-                email,
-                role,
-                joined_at,
-            })
+            .map(
+                |(member_id, user_id, email, role, joined_at)| MemberToSuspend {
+                    member_id,
+                    user_id,
+                    email,
+                    role,
+                    joined_at,
+                },
+            )
             .collect();
 
         Ok(suspended)

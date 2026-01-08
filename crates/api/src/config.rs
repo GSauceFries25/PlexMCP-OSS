@@ -8,7 +8,7 @@ pub struct Config {
     // Server
     pub bind_address: String,
     pub public_url: String,
-    pub base_domain: String,  // e.g., "plexmcp.com" for *.plexmcp.com routing
+    pub base_domain: String, // e.g., "plexmcp.com" for *.plexmcp.com routing
 
     // Database
     pub database_url: String,
@@ -66,7 +66,8 @@ impl Config {
         Ok(Self {
             // Server
             bind_address: env::var("BIND_ADDRESS").unwrap_or_else(|_| "0.0.0.0:3000".to_string()),
-            public_url: env::var("PUBLIC_URL").unwrap_or_else(|_| "http://localhost:3000".to_string()),
+            public_url: env::var("PUBLIC_URL")
+                .unwrap_or_else(|_| "http://localhost:3000".to_string()),
             base_domain: env::var("BASE_DOMAIN").unwrap_or_else(|_| "localhost".to_string()),
 
             // Database
@@ -79,24 +80,24 @@ impl Config {
                 .unwrap_or(20),
 
             // Redis
-            redis_url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://localhost:6379".to_string()),
+            redis_url: env::var("REDIS_URL")
+                .unwrap_or_else(|_| "redis://localhost:6379".to_string()),
 
             // Authentication
             jwt_secret: {
-                let secret = env::var("JWT_SECRET")
-                    .map_err(|_| ConfigError::Missing("JWT_SECRET"))?;
+                let secret =
+                    env::var("JWT_SECRET").map_err(|_| ConfigError::Missing("JWT_SECRET"))?;
                 // SOC 2 CC6.1: Ensure JWT signing key is cryptographically strong
                 if secret.len() < 32 {
-                    return Err(ConfigError::WeakSecret("JWT_SECRET must be at least 32 characters"));
+                    return Err(ConfigError::WeakSecret(
+                        "JWT_SECRET must be at least 32 characters",
+                    ));
                 }
                 secret
             },
-            supabase_jwt_secret: env::var("SUPABASE_JWT_SECRET")
-                .unwrap_or_else(|_| "".to_string()),
-            supabase_url: env::var("SUPABASE_URL")
-                .unwrap_or_else(|_| "".to_string()),
-            supabase_anon_key: env::var("SUPABASE_ANON_KEY")
-                .unwrap_or_else(|_| "".to_string()),
+            supabase_jwt_secret: env::var("SUPABASE_JWT_SECRET").unwrap_or_else(|_| "".to_string()),
+            supabase_url: env::var("SUPABASE_URL").unwrap_or_else(|_| "".to_string()),
+            supabase_anon_key: env::var("SUPABASE_ANON_KEY").unwrap_or_else(|_| "".to_string()),
             supabase_service_role_key: env::var("SUPABASE_SERVICE_ROLE_KEY")
                 .unwrap_or_else(|_| "".to_string()),
             jwt_expiry_hours: env::var("JWT_EXPIRY_HOURS")
@@ -108,7 +109,9 @@ impl Config {
                     .map_err(|_| ConfigError::Missing("API_KEY_HMAC_SECRET"))?;
                 // SOC 2 CC6.1: Ensure HMAC key is cryptographically strong
                 if secret.len() < 32 {
-                    return Err(ConfigError::WeakSecret("API_KEY_HMAC_SECRET must be at least 32 characters"));
+                    return Err(ConfigError::WeakSecret(
+                        "API_KEY_HMAC_SECRET must be at least 32 characters",
+                    ));
                 }
                 secret
             },
@@ -119,7 +122,9 @@ impl Config {
 
                 // Validate key is 64 hex characters (32 bytes)
                 if key.len() != 64 {
-                    return Err(ConfigError::InvalidTotpKey("TOTP_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)"));
+                    return Err(ConfigError::InvalidTotpKey(
+                        "TOTP_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)",
+                    ));
                 }
 
                 // Reject known insecure default keys
@@ -130,7 +135,9 @@ impl Config {
                 ];
 
                 if INSECURE_KEYS.contains(&key.as_str()) {
-                    return Err(ConfigError::InsecureTotpKey("TOTP_ENCRYPTION_KEY is using a known insecure default value"));
+                    return Err(ConfigError::InsecureTotpKey(
+                        "TOTP_ENCRYPTION_KEY is using a known insecure default value",
+                    ));
                 }
 
                 // Validate all characters are valid hex
@@ -144,15 +151,20 @@ impl Config {
             // Stripe
             stripe_secret_key: env::var("STRIPE_SECRET_KEY").unwrap_or_default(),
             stripe_webhook_secret: env::var("STRIPE_WEBHOOK_SECRET").unwrap_or_default(),
-            stripe_price_free: env::var("STRIPE_PRICE_FREE").unwrap_or_else(|_| "price_free".to_string()),
-            stripe_price_pro: env::var("STRIPE_PRICE_PRO").unwrap_or_else(|_| "price_pro".to_string()),
-            stripe_price_team: env::var("STRIPE_PRICE_TEAM").unwrap_or_else(|_| "price_team".to_string()),
-            stripe_price_enterprise: env::var("STRIPE_PRICE_ENTERPRISE").unwrap_or_else(|_| "price_enterprise".to_string()),
+            stripe_price_free: env::var("STRIPE_PRICE_FREE")
+                .unwrap_or_else(|_| "price_free".to_string()),
+            stripe_price_pro: env::var("STRIPE_PRICE_PRO")
+                .unwrap_or_else(|_| "price_pro".to_string()),
+            stripe_price_team: env::var("STRIPE_PRICE_TEAM")
+                .unwrap_or_else(|_| "price_team".to_string()),
+            stripe_price_enterprise: env::var("STRIPE_PRICE_ENTERPRISE")
+                .unwrap_or_else(|_| "price_enterprise".to_string()),
 
             // Email
             resend_api_key: env::var("RESEND_API_KEY").unwrap_or_default(),
             resend_webhook_secret: env::var("RESEND_WEBHOOK_SECRET").unwrap_or_default(),
-            email_from: env::var("EMAIL_FROM").unwrap_or_else(|_| "PlexMCP <noreply@localhost>".to_string()),
+            email_from: env::var("EMAIL_FROM")
+                .unwrap_or_else(|_| "PlexMCP <noreply@localhost>".to_string()),
 
             // Feature flags
             enable_signup: env::var("ENABLE_SIGNUP")
@@ -221,8 +233,14 @@ mod tests {
     fn setup_minimal_config() {
         env::set_var("DATABASE_URL", "postgres://test");
         // Must be at least 32 characters for SOC 2 validation
-        env::set_var("JWT_SECRET", "test-jwt-secret-must-be-at-least-32-characters-long");
-        env::set_var("API_KEY_HMAC_SECRET", "test-hmac-secret-must-be-at-least-32-chars");
+        env::set_var(
+            "JWT_SECRET",
+            "test-jwt-secret-must-be-at-least-32-characters-long",
+        );
+        env::set_var(
+            "API_KEY_HMAC_SECRET",
+            "test-hmac-secret-must-be-at-least-32-chars",
+        );
     }
 
     /// Helper to clear env vars after tests
@@ -246,11 +264,17 @@ mod tests {
         assert!(result.is_err(), "Missing TOTP key should fail");
         match result {
             Err(ConfigError::Missing("TOTP_ENCRYPTION_KEY")) => {}
-            other => panic!("Expected Missing error for TOTP_ENCRYPTION_KEY, got: {:?}", other),
+            other => panic!(
+                "Expected Missing error for TOTP_ENCRYPTION_KEY, got: {:?}",
+                other
+            ),
         }
 
         // === Test 2: All-zeros key rejected (insecure) ===
-        env::set_var("TOTP_ENCRYPTION_KEY", "0000000000000000000000000000000000000000000000000000000000000000");
+        env::set_var(
+            "TOTP_ENCRYPTION_KEY",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        );
         let result = Config::from_env();
         assert!(result.is_err(), "All-zeros key should be rejected");
         assert!(
@@ -259,7 +283,10 @@ mod tests {
         );
 
         // === Test 3: All-ones key rejected (insecure) ===
-        env::set_var("TOTP_ENCRYPTION_KEY", "1111111111111111111111111111111111111111111111111111111111111111");
+        env::set_var(
+            "TOTP_ENCRYPTION_KEY",
+            "1111111111111111111111111111111111111111111111111111111111111111",
+        );
         let result = Config::from_env();
         assert!(result.is_err(), "All-ones key should be rejected");
         assert!(
@@ -268,7 +295,10 @@ mod tests {
         );
 
         // === Test 4: All-F's key rejected (insecure) ===
-        env::set_var("TOTP_ENCRYPTION_KEY", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        env::set_var(
+            "TOTP_ENCRYPTION_KEY",
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        );
         let result = Config::from_env();
         assert!(result.is_err(), "All-F's key should be rejected");
         assert!(
@@ -286,7 +316,10 @@ mod tests {
         );
 
         // === Test 6: Too long key rejected ===
-        env::set_var("TOTP_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdefEXTRA");
+        env::set_var(
+            "TOTP_ENCRYPTION_KEY",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdefEXTRA",
+        );
         let result = Config::from_env();
         assert!(result.is_err(), "Too long key should be rejected");
         assert!(
@@ -295,7 +328,10 @@ mod tests {
         );
 
         // === Test 7: Non-hex characters rejected ===
-        env::set_var("TOTP_ENCRYPTION_KEY", "xyz123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd");
+        env::set_var(
+            "TOTP_ENCRYPTION_KEY",
+            "xyz123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd",
+        );
         let result = Config::from_env();
         assert!(result.is_err(), "Non-hex key should be rejected");
         assert!(
@@ -304,7 +340,10 @@ mod tests {
         );
 
         // === Test 8: Valid key accepted ===
-        env::set_var("TOTP_ENCRYPTION_KEY", "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456");
+        env::set_var(
+            "TOTP_ENCRYPTION_KEY",
+            "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456",
+        );
         let result = Config::from_env();
         assert!(result.is_ok(), "Valid key should be accepted");
         let config = result.unwrap();

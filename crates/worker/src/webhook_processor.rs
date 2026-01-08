@@ -1,13 +1,12 @@
+use serde_json::Value;
 ///! Webhook Queue Processor
 ///!
 ///! Processes webhooks from the persistent queue with retry logic.
 ///! This replaces the fire-and-forget pattern with reliable processing.
-
 use sqlx::PgPool;
-use uuid::Uuid;
-use serde_json::Value;
-use tracing::{error, info, warn};
 use std::time::Duration;
+use tracing::{error, info, warn};
+use uuid::Uuid;
 
 /// Process pending webhooks from the queue
 pub async fn process_webhook_queue(
@@ -26,7 +25,7 @@ pub async fn process_webhook_queue(
         ORDER BY created_at ASC
         LIMIT 10
         FOR UPDATE SKIP LOCKED
-        "#
+        "#,
     )
     .fetch_all(pool)
     .await
@@ -51,7 +50,7 @@ pub async fn process_webhook_queue(
             UPDATE webhook_processing_queue
             SET status = 'processing', last_attempt_at = NOW(), attempts = attempts + 1
             WHERE id = $1
-            "#
+            "#,
         )
         .bind(queue_id)
         .execute(pool)
@@ -64,7 +63,14 @@ pub async fn process_webhook_queue(
         // Process based on webhook type
         let result = match webhook_type.as_str() {
             "email.received" => {
-                process_email_webhook(pool, http_client, resend_api_key, enable_email_routing, &payload).await
+                process_email_webhook(
+                    pool,
+                    http_client,
+                    resend_api_key,
+                    enable_email_routing,
+                    &payload,
+                )
+                .await
             }
             _ => {
                 warn!(webhook_type = %webhook_type, "Unknown webhook type");
@@ -154,7 +160,7 @@ pub async fn cleanup_old_webhooks(pool: &PgPool, retention_days: i32) {
         DELETE FROM webhook_processing_queue
         WHERE processed_at < NOW() - ($1 || ' days')::INTERVAL
           AND status IN ('completed', 'failed')
-        "#
+        "#,
     )
     .bind(retention_days)
     .execute(pool)

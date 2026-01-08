@@ -70,7 +70,6 @@ pub enum AddonType {
 
     // === LEGACY ADDONS (kept for backwards compat) ===
     // These map to new equivalents or are deprecated
-
     /// Legacy: maps to RequestPack
     #[serde(rename = "extra_requests")]
     ExtraRequests,
@@ -100,9 +99,7 @@ pub enum AddonType {
 impl AddonType {
     /// Get all available add-on types (only CustomDomain as of Dec 2024)
     pub fn all() -> Vec<Self> {
-        vec![
-            Self::CustomDomain,
-        ]
+        vec![Self::CustomDomain]
     }
 
     /// Get all addon types including legacy (for existing customer support)
@@ -140,7 +137,10 @@ impl AddonType {
     pub fn is_legacy(&self) -> bool {
         matches!(
             self,
-            Self::ExtraRequests | Self::HigherRateLimits | Self::IpAllowlisting | Self::WebhookAlerts
+            Self::ExtraRequests
+                | Self::HigherRateLimits
+                | Self::IpAllowlisting
+                | Self::WebhookAlerts
         )
     }
 
@@ -261,25 +261,25 @@ impl AddonType {
     pub fn price_cents(&self) -> i32 {
         match self {
             // New system - Scale Your Plan
-            Self::RequestPack => 800,           // $8/mo (+25K requests)
-            Self::BurstMode => 1500,            // $15/mo (2x rate limits)
+            Self::RequestPack => 800, // $8/mo (+25K requests)
+            Self::BurstMode => 1500,  // $15/mo (2x rate limits)
             // New system - Enhance Your Workflow
-            Self::AnalyticsPro => 1200,         // $12/mo (deep analytics + exports)
-            Self::WebhookNotifications => 800,  // $8/mo (real-time alerts)
-            Self::CustomDomain => 1000,         // $10/mo (DNS verified domain)
-            Self::SecuritySuite => 2000,        // $20/mo (IP + SSO + audit)
-            Self::ExtendedRetention => 1000,    // $10/mo (90-day history)
+            Self::AnalyticsPro => 1200, // $12/mo (deep analytics + exports)
+            Self::WebhookNotifications => 800, // $8/mo (real-time alerts)
+            Self::CustomDomain => 1000, // $10/mo (DNS verified domain)
+            Self::SecuritySuite => 2000, // $20/mo (IP + SSO + audit)
+            Self::ExtendedRetention => 1000, // $10/mo (90-day history)
             // Legacy prices (use canonical pricing)
-            Self::ExtraRequests => 800,         // Maps to RequestPack
-            Self::HigherRateLimits => 1500,     // Maps to BurstMode
-            Self::IpAllowlisting => 2000,       // Maps to SecuritySuite
-            Self::WebhookAlerts => 800,         // Maps to WebhookNotifications
+            Self::ExtraRequests => 800,     // Maps to RequestPack
+            Self::HigherRateLimits => 1500, // Maps to BurstMode
+            Self::IpAllowlisting => 2000,   // Maps to SecuritySuite
+            Self::WebhookAlerts => 800,     // Maps to WebhookNotifications
             // Deprecated (keep old prices for existing customers)
-            Self::ExtraMcps => 500,             // $5/mo (grandfathered)
-            Self::ExtraApiKeys => 400,          // $4/mo (grandfathered)
-            Self::ExtraTeamMembers => 800,      // $8/mo (grandfathered)
-            Self::PrioritySupport => 800,       // $8/mo (grandfathered)
-            Self::DataExport => 500,            // $5/mo (grandfathered)
+            Self::ExtraMcps => 500,        // $5/mo (grandfathered)
+            Self::ExtraApiKeys => 400,     // $4/mo (grandfathered)
+            Self::ExtraTeamMembers => 800, // $8/mo (grandfathered)
+            Self::PrioritySupport => 800,  // $8/mo (grandfathered)
+            Self::DataExport => 500,       // $5/mo (grandfathered)
         }
     }
 
@@ -287,16 +287,23 @@ impl AddonType {
     pub fn category(&self) -> AddonCategory {
         match self {
             // Scale Your Plan - capacity/overflow
-            Self::RequestPack | Self::BurstMode
-            | Self::ExtraRequests | Self::HigherRateLimits => AddonCategory::Scale,
+            Self::RequestPack | Self::BurstMode | Self::ExtraRequests | Self::HigherRateLimits => {
+                AddonCategory::Scale
+            }
 
             // Enhance Your Workflow - features
-            Self::AnalyticsPro | Self::WebhookNotifications | Self::CustomDomain
-            | Self::SecuritySuite | Self::ExtendedRetention
-            | Self::IpAllowlisting | Self::WebhookAlerts => AddonCategory::Enhance,
+            Self::AnalyticsPro
+            | Self::WebhookNotifications
+            | Self::CustomDomain
+            | Self::SecuritySuite
+            | Self::ExtendedRetention
+            | Self::IpAllowlisting
+            | Self::WebhookAlerts => AddonCategory::Enhance,
 
             // Deprecated addons use legacy categories for existing data
-            Self::ExtraMcps | Self::ExtraApiKeys | Self::ExtraTeamMembers => AddonCategory::ResourcePacks,
+            Self::ExtraMcps | Self::ExtraApiKeys | Self::ExtraTeamMembers => {
+                AddonCategory::ResourcePacks
+            }
             Self::PrioritySupport | Self::DataExport => AddonCategory::Features,
         }
     }
@@ -307,15 +314,18 @@ impl AddonType {
         // Only legacy stackable addons for existing customers
         matches!(
             self,
-            Self::RequestPack | Self::ExtraRequests
-                | Self::ExtraMcps | Self::ExtraApiKeys | Self::ExtraTeamMembers
+            Self::RequestPack
+                | Self::ExtraRequests
+                | Self::ExtraMcps
+                | Self::ExtraApiKeys
+                | Self::ExtraTeamMembers
         )
     }
 
     /// Get the resource increment for stackable add-ons
     pub fn resource_increment(&self) -> Option<i32> {
         match self {
-            Self::RequestPack | Self::ExtraRequests => Some(25_000),  // +25K requests
+            Self::RequestPack | Self::ExtraRequests => Some(25_000), // +25K requests
             // Legacy (grandfathered)
             Self::ExtraMcps => Some(3),
             Self::ExtraApiKeys => Some(3),
@@ -437,16 +447,17 @@ impl AddonService {
 
         // Validate quantity for non-stackable add-ons
         if !addon_type.is_stackable() && quantity > 1 {
-            return Err(BillingError::InvalidInput(
-                format!("{} is not a stackable add-on", addon_type.display_name())
-            ));
+            return Err(BillingError::InvalidInput(format!(
+                "{} is not a stackable add-on",
+                addon_type.display_name()
+            )));
         }
 
         // Get the organization's active subscription
         let subscription: Option<(Uuid, Option<String>)> = sqlx::query_as(
             "SELECT id, stripe_subscription_id FROM subscriptions
              WHERE org_id = $1 AND status = 'active'
-             LIMIT 1"
+             LIMIT 1",
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -464,16 +475,16 @@ impl AddonService {
                 let new_sub: (Uuid, Option<String>) = sqlx::query_as(
                     "SELECT id, stripe_subscription_id FROM subscriptions
                      WHERE org_id = $1 AND status = 'active'
-                     LIMIT 1"
+                     LIMIT 1",
                 )
                 .bind(org_id)
                 .fetch_one(&self.pool)
                 .await
                 .map_err(|e| BillingError::Database(e.to_string()))?;
 
-                let stripe_id = new_sub.1.ok_or_else(||
+                let stripe_id = new_sub.1.ok_or_else(|| {
                     BillingError::Internal("Failed to create add-on subscription".to_string())
-                )?;
+                })?;
 
                 (new_sub.0, stripe_id)
             }
@@ -487,7 +498,7 @@ impl AddonService {
             "SELECT id, stripe_item_id, quantity, status FROM subscription_addons
              WHERE org_id = $1 AND addon_type = $2
              ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END
-             LIMIT 1"
+             LIMIT 1",
         )
         .bind(org_id)
         .bind(addon_type.as_str())
@@ -501,32 +512,38 @@ impl AddonService {
                 // Already active - handle stackable or return error
                 if addon_type.is_stackable() {
                     let new_quantity = current_qty.unwrap_or(1) as u32 + quantity;
-                    return self.update_addon_quantity(
-                        existing_id,
-                        stripe_item_id,
-                        new_quantity,
-                        addon_type,
-                    ).await;
+                    return self
+                        .update_addon_quantity(
+                            existing_id,
+                            stripe_item_id,
+                            new_quantity,
+                            addon_type,
+                        )
+                        .await;
                 } else {
-                    return Err(BillingError::AlreadyExists("Add-on already enabled".to_string()));
+                    return Err(BillingError::AlreadyExists(
+                        "Add-on already enabled".to_string(),
+                    ));
                 }
             } else {
                 // Canceled in DB - check if Stripe item still exists and reactivate
                 if stripe_item_id.is_some() {
                     // Check if the Stripe subscription still has this price
-                    let stripe_sub_id = stripe_subscription_id
-                        .parse::<SubscriptionId>()
-                        .map_err(|e| BillingError::StripeApi(format!("Invalid subscription ID: {}", e)))?;
+                    let stripe_sub_id =
+                        stripe_subscription_id
+                            .parse::<SubscriptionId>()
+                            .map_err(|e| {
+                                BillingError::StripeApi(format!("Invalid subscription ID: {}", e))
+                            })?;
 
-                    let stripe_sub = stripe::Subscription::retrieve(
-                        self.stripe.inner(),
-                        &stripe_sub_id,
-                        &[]
-                    ).await?;
+                    let stripe_sub =
+                        stripe::Subscription::retrieve(self.stripe.inner(), &stripe_sub_id, &[])
+                            .await?;
 
                     let price_id = self.get_price_id_for_addon(addon_type)?;
                     let existing_item = stripe_sub.items.data.iter().find(|item| {
-                        item.price.as_ref()
+                        item.price
+                            .as_ref()
                             .map(|p| p.id.as_str() == price_id)
                             .unwrap_or(false)
                     });
@@ -545,7 +562,7 @@ impl AddonService {
                              SET status = 'active', canceled_at = NULL, updated_at = NOW(),
                                  stripe_item_id = $3, quantity = $4
                              WHERE id = $1 AND org_id = $2
-                             RETURNING *"
+                             RETURNING *",
                         )
                         .bind(existing_id)
                         .bind(org_id)
@@ -568,14 +585,12 @@ impl AddonService {
             .map_err(|e| BillingError::StripeApi(format!("Invalid subscription ID: {}", e)))?;
 
         // Check if Stripe subscription already has this price (handles orphaned items)
-        let stripe_sub = stripe::Subscription::retrieve(
-            self.stripe.inner(),
-            &stripe_sub_id,
-            &[]
-        ).await?;
+        let stripe_sub =
+            stripe::Subscription::retrieve(self.stripe.inner(), &stripe_sub_id, &[]).await?;
 
         let existing_stripe_item = stripe_sub.items.data.iter().find(|item| {
-            item.price.as_ref()
+            item.price
+                .as_ref()
                 .map(|p| p.id.as_str() == price_id)
                 .unwrap_or(false)
         });
@@ -599,8 +614,7 @@ impl AddonService {
             create_item.price = Some(price_id_parsed);
             create_item.quantity = Some(quantity as u64);
 
-            SubscriptionItem::create(self.stripe.inner(), create_item)
-                .await?
+            SubscriptionItem::create(self.stripe.inner(), create_item).await?
         };
 
         // Insert into database with quantity
@@ -618,7 +632,7 @@ impl AddonService {
                 quantity = EXCLUDED.quantity,
                 canceled_at = NULL,
                 updated_at = NOW()
-            RETURNING *"
+            RETURNING *",
         )
         .bind(org_id)
         .bind(subscription_id)
@@ -644,15 +658,14 @@ impl AddonService {
     ) -> BillingResult<SubscriptionAddon> {
         // Update Stripe subscription item quantity
         if let Some(item_id) = stripe_item_id {
-            let item_id_parsed = item_id
-                .parse::<SubscriptionItemId>()
-                .map_err(|e| BillingError::StripeApi(format!("Invalid subscription item ID: {}", e)))?;
+            let item_id_parsed = item_id.parse::<SubscriptionItemId>().map_err(|e| {
+                BillingError::StripeApi(format!("Invalid subscription item ID: {}", e))
+            })?;
 
             let mut update_item = UpdateSubscriptionItem::new();
             update_item.quantity = Some(new_quantity as u64);
 
-            SubscriptionItem::update(self.stripe.inner(), &item_id_parsed, update_item)
-                .await?;
+            SubscriptionItem::update(self.stripe.inner(), &item_id_parsed, update_item).await?;
         }
 
         // Update database
@@ -660,7 +673,7 @@ impl AddonService {
             "UPDATE subscription_addons
              SET quantity = $1, updated_at = NOW()
              WHERE id = $2
-             RETURNING *"
+             RETURNING *",
         )
         .bind(new_quantity as i32)
         .bind(addon_id)
@@ -686,15 +699,16 @@ impl AddonService {
         quantity: u32,
     ) -> BillingResult<SubscriptionAddon> {
         if !addon_type.is_stackable() {
-            return Err(BillingError::InvalidInput(
-                format!("{} is not a stackable add-on", addon_type.display_name())
-            ));
+            return Err(BillingError::InvalidInput(format!(
+                "{} is not a stackable add-on",
+                addon_type.display_name()
+            )));
         }
 
         // Get existing add-on
         let existing: Option<(Uuid, Option<String>)> = sqlx::query_as(
             "SELECT id, stripe_item_id FROM subscription_addons
-             WHERE org_id = $1 AND addon_type = $2 AND status = 'active'"
+             WHERE org_id = $1 AND addon_type = $2 AND status = 'active'",
         )
         .bind(org_id)
         .bind(addon_type.as_str())
@@ -704,12 +718,15 @@ impl AddonService {
 
         match existing {
             Some((addon_id, stripe_item_id)) if quantity > 0 => {
-                self.update_addon_quantity(addon_id, stripe_item_id, quantity, addon_type).await
+                self.update_addon_quantity(addon_id, stripe_item_id, quantity, addon_type)
+                    .await
             }
             Some(_) if quantity == 0 => {
                 // Disable add-on if quantity is 0
                 self.disable_addon(org_id, addon_type).await?;
-                Err(BillingError::NotFound("Add-on disabled due to zero quantity".to_string()))
+                Err(BillingError::NotFound(
+                    "Add-on disabled due to zero quantity".to_string(),
+                ))
             }
             None if quantity > 0 => {
                 // Create new add-on
@@ -720,15 +737,11 @@ impl AddonService {
     }
 
     /// Disable an add-on for an organization
-    pub async fn disable_addon(
-        &self,
-        org_id: Uuid,
-        addon_type: AddonType,
-    ) -> BillingResult<()> {
+    pub async fn disable_addon(&self, org_id: Uuid, addon_type: AddonType) -> BillingResult<()> {
         // Get the add-on
         let addon: Option<(Uuid, Option<String>)> = sqlx::query_as(
             "SELECT id, stripe_item_id FROM subscription_addons
-             WHERE org_id = $1 AND addon_type = $2 AND status = 'active'"
+             WHERE org_id = $1 AND addon_type = $2 AND status = 'active'",
         )
         .bind(org_id)
         .bind(addon_type.as_str())
@@ -736,21 +749,20 @@ impl AddonService {
         .await
         .map_err(|e| BillingError::Database(e.to_string()))?;
 
-        let (addon_id, stripe_item_id) = addon
-            .ok_or_else(|| BillingError::NotFound("Add-on not found".to_string()))?;
+        let (addon_id, stripe_item_id) =
+            addon.ok_or_else(|| BillingError::NotFound("Add-on not found".to_string()))?;
 
         // Delete the subscription item in Stripe
         if let Some(stripe_item_id) = stripe_item_id {
-            let item_id = stripe_item_id
-                .parse::<SubscriptionItemId>()
-                .map_err(|e| BillingError::StripeApi(format!("Invalid subscription item ID: {}", e)))?;
-            SubscriptionItem::delete(self.stripe.inner(), &item_id)
-                .await?;
+            let item_id = stripe_item_id.parse::<SubscriptionItemId>().map_err(|e| {
+                BillingError::StripeApi(format!("Invalid subscription item ID: {}", e))
+            })?;
+            SubscriptionItem::delete(self.stripe.inner(), &item_id).await?;
         }
 
         // Update database status
         sqlx::query(
-            "UPDATE subscription_addons SET status = 'canceled', canceled_at = NOW() WHERE id = $1"
+            "UPDATE subscription_addons SET status = 'canceled', canceled_at = NOW() WHERE id = $1",
         )
         .bind(addon_id)
         .execute(&self.pool)
@@ -819,28 +831,31 @@ impl AddonService {
             AddonType::PrioritySupport => config.price_ids.priority_support.as_ref(),
             AddonType::DataExport => config.price_ids.data_export.as_ref(),
         };
-        price_id
-            .cloned()
-            .ok_or_else(|| BillingError::Config(format!(
+        price_id.cloned().ok_or_else(|| {
+            BillingError::Config(format!(
                 "Stripe price ID for {} add-on is not configured",
                 addon_type.as_str()
-            )))
+            ))
+        })
     }
 
     /// Create an add-on only subscription for free tier users
     /// This creates a $0 base subscription that add-on items can be attached to
-    async fn create_addon_only_subscription_for_org(&self, org_id: Uuid) -> BillingResult<stripe::Subscription> {
+    async fn create_addon_only_subscription_for_org(
+        &self,
+        org_id: Uuid,
+    ) -> BillingResult<stripe::Subscription> {
         // Get the org's details including stripe_customer_id and owner info
         let org_info: Option<(String, Option<String>)> = sqlx::query_as(
-            "SELECT o.name, o.stripe_customer_id FROM organizations o WHERE o.id = $1"
+            "SELECT o.name, o.stripe_customer_id FROM organizations o WHERE o.id = $1",
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| BillingError::Database(e.to_string()))?;
 
-        let (org_name, existing_customer_id) = org_info
-            .ok_or_else(|| BillingError::NotFound("Organization not found".to_string()))?;
+        let (org_name, existing_customer_id) =
+            org_info.ok_or_else(|| BillingError::NotFound("Organization not found".to_string()))?;
 
         // Get or create the Stripe customer
         let customer_id = match existing_customer_id {
@@ -851,7 +866,7 @@ impl AddonService {
                     "SELECT u.email FROM users u
                      JOIN org_members om ON u.id = om.user_id
                      WHERE om.org_id = $1 AND om.role = 'owner'
-                     LIMIT 1"
+                     LIMIT 1",
                 )
                 .bind(org_id)
                 .fetch_optional(&self.pool)
@@ -864,7 +879,9 @@ impl AddonService {
 
                 // Create Stripe customer
                 let customer_service = CustomerService::new(self.stripe.clone(), self.pool.clone());
-                let customer = customer_service.create_customer(org_id, &email, &org_name).await?;
+                let customer = customer_service
+                    .create_customer(org_id, &email, &org_name)
+                    .await?;
 
                 tracing::info!(
                     org_id = %org_id,
@@ -878,7 +895,9 @@ impl AddonService {
 
         // Create the subscription service and call it
         let sub_service = SubscriptionService::new(self.stripe.clone(), self.pool.clone());
-        let subscription = sub_service.create_addon_only_subscription(org_id, &customer_id).await?;
+        let subscription = sub_service
+            .create_addon_only_subscription(org_id, &customer_id)
+            .await?;
 
         tracing::info!(
             org_id = %org_id,
@@ -894,7 +913,7 @@ impl AddonService {
         let addons: Vec<(String, i32)> = sqlx::query_as(
             "SELECT addon_type, COALESCE(quantity, 1)
              FROM subscription_addons
-             WHERE org_id = $1 AND status = 'active'"
+             WHERE org_id = $1 AND status = 'active'",
         )
         .bind(org_id)
         .fetch_all(&self.pool)
@@ -927,9 +946,14 @@ impl AddonService {
         let addons: Vec<AddonInfo> = AddonType::all()
             .into_iter()
             .map(|addon_type| {
-                let active = active_addons.iter().find(|a| a.addon_type == addon_type.as_str());
+                let active = active_addons
+                    .iter()
+                    .find(|a| a.addon_type == addon_type.as_str());
                 let enabled = tier_includes_all || active.is_some();
-                let quantity = active.and_then(|a| a.quantity).unwrap_or(if enabled { 1 } else { 0 });
+                let quantity =
+                    active
+                        .and_then(|a| a.quantity)
+                        .unwrap_or(if enabled { 1 } else { 0 });
 
                 AddonInfo {
                     addon_type: addon_type.as_str().to_string(),

@@ -19,7 +19,10 @@ impl SlackNotifier {
     }
 
     /// Send alert to Slack
-    pub async fn send_alert(&self, alert: &SecurityAlert) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn send_alert(
+        &self,
+        alert: &SecurityAlert,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let Some(ref webhook_url) = self.webhook_url else {
             tracing::warn!("Slack webhook URL not configured, skipping notification");
             return Ok(());
@@ -33,10 +36,10 @@ impl SlackNotifier {
         };
 
         let color = match alert.severity {
-            Severity::Critical => "#FF0000",  // Red
-            Severity::High => "#FFA500",      // Orange
-            Severity::Medium => "#FFFF00",    // Yellow
-            Severity::Low => "#00BFFF",       // Blue
+            Severity::Critical => "#FF0000", // Red
+            Severity::High => "#FFA500",     // Orange
+            Severity::Medium => "#FFFF00",   // Yellow
+            Severity::Low => "#00BFFF",      // Blue
         };
 
         // Build Slack message with attachment
@@ -78,11 +81,7 @@ impl SlackNotifier {
 
         // Send to Slack
         let client = reqwest::Client::new();
-        let response = client
-            .post(webhook_url)
-            .json(&payload)
-            .send()
-            .await?;
+        let response = client.post(webhook_url).json(&payload).send().await?;
 
         if !response.status().is_success() {
             let status = response.status();

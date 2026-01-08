@@ -253,14 +253,9 @@ pub enum Content {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "image")]
-    Image {
-        data: String,
-        mime_type: String,
-    },
+    Image { data: String, mime_type: String },
     #[serde(rename = "resource")]
-    Resource {
-        resource: EmbeddedResource,
-    },
+    Resource { resource: EmbeddedResource },
 }
 
 /// Embedded resource in content
@@ -501,10 +496,8 @@ mod tests {
 
     #[test]
     fn test_json_rpc_response_success() {
-        let resp = JsonRpcResponse::success(
-            Some(JsonRpcId::Number(1)),
-            serde_json::json!({"tools": []}),
-        );
+        let resp =
+            JsonRpcResponse::success(Some(JsonRpcId::Number(1)), serde_json::json!({"tools": []}));
 
         assert!(resp.result.is_some());
         assert!(resp.error.is_none());

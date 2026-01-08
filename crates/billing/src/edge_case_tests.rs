@@ -45,7 +45,10 @@ mod rate_limit_tests {
         // 61st request should be rejected
         let result = limiter.check_api_key(org_id, api_key_id, 60).await.unwrap();
         assert!(!result.allowed, "61st request should be rejected");
-        assert!(result.retry_after_seconds.is_some(), "Should have retry_after");
+        assert!(
+            result.retry_after_seconds.is_some(),
+            "Should have retry_after"
+        );
     }
 
     // =========================================================================
@@ -91,7 +94,10 @@ mod rate_limit_tests {
         let rejected_count = results.iter().filter(|r| !r.allowed).count();
 
         assert!(allowed_count <= 5, "At most 5 concurrent should succeed");
-        assert!(rejected_count >= 5, "At least 5 concurrent should be rejected");
+        assert!(
+            rejected_count >= 5,
+            "At least 5 concurrent should be rejected"
+        );
     }
 
     // =========================================================================
@@ -130,12 +136,18 @@ mod rate_limit_tests {
         // Use combined check where API key limit is higher
         // API key: 100 rpm, Org: 5 rpm
         for _ in 0..5 {
-            let result = limiter.check_request(org_id, api_key_id, 100, 5).await.unwrap();
+            let result = limiter
+                .check_request(org_id, api_key_id, 100, 5)
+                .await
+                .unwrap();
             assert!(result.allowed);
         }
 
         // Should be blocked by org limit, not API key limit
-        let result = limiter.check_request(org_id, api_key_id, 100, 5).await.unwrap();
+        let result = limiter
+            .check_request(org_id, api_key_id, 100, 5)
+            .await
+            .unwrap();
         assert!(!result.allowed, "Should be blocked by org limit");
     }
 
@@ -292,7 +304,10 @@ mod overage_tests {
     fn test_enterprise_has_no_overage_rate() {
         let tier = SubscriptionTier::Enterprise;
         let rates = OverageRates::for_tier(tier);
-        assert!(rates.is_none(), "Enterprise tier should have no overage rate");
+        assert!(
+            rates.is_none(),
+            "Enterprise tier should have no overage rate"
+        );
     }
 
     // =========================================================================
@@ -315,10 +330,16 @@ mod overage_tests {
         // Rate is configurable via OVERAGE_RATE_PRO_CENTS env var
         // Default is 50 cents per 1K
         if std::env::var("OVERAGE_RATE_PRO_CENTS").is_err() {
-            assert_eq!(rates.requests_per_1k_cents, 50, "Pro rate should default to $0.50/1K");
+            assert_eq!(
+                rates.requests_per_1k_cents, 50,
+                "Pro rate should default to $0.50/1K"
+            );
         } else {
             // Just verify it has SOME rate
-            assert!(rates.requests_per_1k_cents > 0, "Pro rate should be positive");
+            assert!(
+                rates.requests_per_1k_cents > 0,
+                "Pro rate should be positive"
+            );
         }
     }
 
@@ -332,10 +353,16 @@ mod overage_tests {
         // Rate is configurable via OVERAGE_RATE_TEAM_CENTS env var
         // Default is 25 cents per 1K
         if std::env::var("OVERAGE_RATE_TEAM_CENTS").is_err() {
-            assert_eq!(rates.requests_per_1k_cents, 25, "Team rate should default to $0.25/1K");
+            assert_eq!(
+                rates.requests_per_1k_cents, 25,
+                "Team rate should default to $0.25/1K"
+            );
         } else {
             // Just verify it has SOME rate
-            assert!(rates.requests_per_1k_cents > 0, "Team rate should be positive");
+            assert!(
+                rates.requests_per_1k_cents > 0,
+                "Team rate should be positive"
+            );
         }
     }
 
@@ -394,7 +421,10 @@ mod spend_cap_tests {
         };
         // The validation happens in set_spend_cap which requires DB
         // Here we validate the threshold value
-        assert!(request.cap_amount_cents < 1000, "$9.99 is less than $10 minimum");
+        assert!(
+            request.cap_amount_cents < 1000,
+            "$9.99 is less than $10 minimum"
+        );
     }
 
     // =========================================================================
@@ -561,7 +591,11 @@ mod subscription_tests {
 
         assert_eq!(pro_limit, 5, "Pro tier should have 5 members");
         // Team has unlimited members
-        assert_eq!(team_limit, u32::MAX, "Team tier should have unlimited members");
+        assert_eq!(
+            team_limit,
+            u32::MAX,
+            "Team tier should have unlimited members"
+        );
 
         // If org has 10 members and downgrades Team->Pro:
         // 10 - 5 = 5 members should be suspended
@@ -587,15 +621,29 @@ mod subscription_tests {
     #[test]
     fn test_tier_overage_support() {
         // Free tier: no overages (None rate)
-        assert!(SubscriptionTier::Free.overage_rate_per_1k_cents().is_none(), "Free shouldn't allow overages");
+        assert!(
+            SubscriptionTier::Free.overage_rate_per_1k_cents().is_none(),
+            "Free shouldn't allow overages"
+        );
 
         // Pro tier: $0.50/1K = 50 cents (Some(50))
-        assert!(SubscriptionTier::Pro.overage_rate_per_1k_cents().is_some(), "Pro should allow overages");
+        assert!(
+            SubscriptionTier::Pro.overage_rate_per_1k_cents().is_some(),
+            "Pro should allow overages"
+        );
 
         // Team tier: $0.25/1K = 25 cents (Some(25))
-        assert!(SubscriptionTier::Team.overage_rate_per_1k_cents().is_some(), "Team should allow overages");
+        assert!(
+            SubscriptionTier::Team.overage_rate_per_1k_cents().is_some(),
+            "Team should allow overages"
+        );
 
         // Enterprise tier: custom pricing (None - handled separately)
-        assert!(SubscriptionTier::Enterprise.overage_rate_per_1k_cents().is_none(), "Enterprise has custom pricing");
+        assert!(
+            SubscriptionTier::Enterprise
+                .overage_rate_per_1k_cents()
+                .is_none(),
+            "Enterprise has custom pricing"
+        );
     }
 }

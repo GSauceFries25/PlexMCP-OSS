@@ -10,4 +10,6 @@ mod cache;
 mod host_resolver;
 
 pub use cache::DomainCache;
-pub use host_resolver::{HostResolveError, HostResolver, ResolvedOrg, ResolutionType, RESERVED_SUBDOMAINS};
+pub use host_resolver::{
+    HostResolveError, HostResolver, ResolutionType, ResolvedOrg, RESERVED_SUBDOMAINS,
+};

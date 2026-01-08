@@ -5,24 +5,18 @@
 
 use axum::{
     body::Body,
-    http::{Request, Response, HeaderValue},
+    http::{HeaderValue, Request, Response},
     middleware::Next,
 };
 
 /// Middleware that adds security headers to all responses
 /// SOC 2 CC6.1: Defense-in-depth security headers
-pub async fn security_headers_middleware(
-    request: Request<Body>,
-    next: Next,
-) -> Response<Body> {
+pub async fn security_headers_middleware(request: Request<Body>, next: Next) -> Response<Body> {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
 
     // X-Frame-Options: Prevent clickjacking attacks
-    headers.insert(
-        "X-Frame-Options",
-        HeaderValue::from_static("DENY"),
-    );
+    headers.insert("X-Frame-Options", HeaderValue::from_static("DENY"));
 
     // X-Content-Type-Options: Prevent MIME type sniffing
     headers.insert(
@@ -64,7 +58,7 @@ pub async fn security_headers_middleware(
              frame-ancestors 'none'; \
              base-uri 'none'; \
              form-action 'none'; \
-             upgrade-insecure-requests"
+             upgrade-insecure-requests",
         ),
     );
 
@@ -101,10 +95,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(
-            response.headers().get("X-Frame-Options").unwrap(),
-            "DENY"
-        );
+        assert_eq!(response.headers().get("X-Frame-Options").unwrap(), "DENY");
         assert_eq!(
             response.headers().get("X-Content-Type-Options").unwrap(),
             "nosniff"

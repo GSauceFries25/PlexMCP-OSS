@@ -15,12 +15,14 @@ use time::{Duration, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::{
-    auth::{generate_impossible_hash, hash_password, sessions, validate_password_strength, AuthUser},
+    auth::{
+        generate_impossible_hash, hash_password, sessions, validate_password_strength, AuthUser,
+    },
     error::{ApiError, ApiResult},
     routes::auth::extract_auth_audit_context,
     state::AppState,
 };
-use plexmcp_shared::types::{SubscriptionTier, CustomLimits, EffectiveLimits};
+use plexmcp_shared::types::{CustomLimits, EffectiveLimits, SubscriptionTier};
 
 // Invitation expiry in days
 const INVITATION_EXPIRY_DAYS: i64 = 7;
@@ -136,9 +138,9 @@ fn generate_invitation_token(invitation_id: Uuid, hmac_secret: &str) -> String {
 
     // Create HMAC signature
     type HmacSha256 = Hmac<Sha256>;
-    #[allow(clippy::expect_used)]  // HMAC accepts keys of any size; this cannot fail
-    let mut mac = HmacSha256::new_from_slice(hmac_secret.as_bytes())
-        .expect("HMAC can take key of any size");
+    #[allow(clippy::expect_used)] // HMAC accepts keys of any size; this cannot fail
+    let mut mac =
+        HmacSha256::new_from_slice(hmac_secret.as_bytes()).expect("HMAC can take key of any size");
     mac.update(payload.as_bytes());
     let signature = mac.finalize().into_bytes();
 
@@ -161,9 +163,9 @@ fn validate_invitation_token(token: &str, hmac_secret: &str) -> Option<Uuid> {
 
     // Verify signature
     type HmacSha256 = Hmac<Sha256>;
-    #[allow(clippy::expect_used)]  // HMAC accepts keys of any size; this cannot fail
-    let mut mac = HmacSha256::new_from_slice(hmac_secret.as_bytes())
-        .expect("HMAC can take key of any size");
+    #[allow(clippy::expect_used)] // HMAC accepts keys of any size; this cannot fail
+    let mut mac =
+        HmacSha256::new_from_slice(hmac_secret.as_bytes()).expect("HMAC can take key of any size");
     mac.update(uuid_str.as_bytes());
     let expected_signature = mac.finalize().into_bytes();
     let expected_sig = hex::encode(&expected_signature[..8]);
@@ -173,7 +175,8 @@ fn validate_invitation_token(token: &str, hmac_secret: &str) -> Option<Uuid> {
         return None;
     }
 
-    let matches = provided_sig.as_bytes()
+    let matches = provided_sig
+        .as_bytes()
         .iter()
         .zip(expected_sig.as_bytes())
         .fold(0u8, |acc, (a, b)| acc | (a ^ b));
@@ -225,16 +228,17 @@ pub async fn create_invitation(
     }
 
     // Check if user already exists in this org
-    let exists_user: Option<(bool,)> = sqlx::query_as(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1 AND org_id = $2)"
-    )
-    .bind(&email)
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let exists_user: Option<(bool,)> =
+        sqlx::query_as("SELECT EXISTS(SELECT 1 FROM users WHERE email = $1 AND org_id = $2)")
+            .bind(&email)
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if exists_user.map(|r| r.0).unwrap_or(false) {
-        return Err(ApiError::Validation("User already exists in this organization".to_string()));
+        return Err(ApiError::Validation(
+            "User already exists in this organization".to_string(),
+        ));
     }
 
     // Check if there's already a pending invitation for this email
@@ -247,7 +251,9 @@ pub async fn create_invitation(
     .await?;
 
     if exists_invitation.map(|r| r.0).unwrap_or(false) {
-        return Err(ApiError::Validation("An invitation has already been sent to this email".to_string()));
+        return Err(ApiError::Validation(
+            "An invitation has already been sent to this email".to_string(),
+        ));
     }
 
     // Check team member limit based on subscription tier (with custom enterprise overrides)
@@ -262,7 +268,7 @@ pub async fn create_invitation(
             SELECT COUNT(*)
             FROM organization_members
             WHERE org_id = $1 AND status = 'active'
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_one(&state.pool)
@@ -274,7 +280,7 @@ pub async fn create_invitation(
             SELECT COUNT(*)
             FROM invitations
             WHERE org_id = $1 AND accepted_at IS NULL AND expires_at > NOW()
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_one(&state.pool)
@@ -299,7 +305,7 @@ pub async fn create_invitation(
         r#"
         INSERT INTO invitations (id, org_id, email, role, token, invited_by, expires_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
-        "#
+        "#,
     )
     .bind(invitation_id)
     .bind(org_id)
@@ -331,14 +337,16 @@ pub async fn create_invitation(
     let role = req.role.clone();
 
     tokio::spawn(async move {
-        email_service.send_invitation_email(
-            &to_email,
-            &org_name,
-            &inviter_name,
-            &role,
-            &accept_url,
-            INVITATION_EXPIRY_DAYS as i32,
-        ).await;
+        email_service
+            .send_invitation_email(
+                &to_email,
+                &org_name,
+                &inviter_name,
+                &role,
+                &accept_url,
+                INVITATION_EXPIRY_DAYS as i32,
+            )
+            .await;
     });
 
     let invitation: InvitationRow = sqlx::query_as(
@@ -378,7 +386,7 @@ pub async fn list_invitations(
         FROM invitations
         WHERE org_id = $1 AND accepted_at IS NULL AND expires_at > NOW()
         ORDER BY created_at DESC
-        "#
+        "#,
     )
     .bind(org_id)
     .fetch_all(&state.pool)
@@ -422,7 +430,7 @@ pub async fn resend_invitation(
         SELECT id, org_id, email, role, token, invited_by, expires_at, accepted_at, created_at
         FROM invitations
         WHERE id = $1 AND org_id = $2
-        "#
+        "#,
     )
     .bind(invitation_id)
     .bind(org_id)
@@ -432,22 +440,23 @@ pub async fn resend_invitation(
 
     // Check if already accepted
     if invitation.accepted_at.is_some() {
-        return Err(ApiError::Validation("Invitation has already been accepted".to_string()));
+        return Err(ApiError::Validation(
+            "Invitation has already been accepted".to_string(),
+        ));
     }
 
     // Check if expired - if so, generate new token and extend expiry
     let (token, expires_at) = if invitation.expires_at < OffsetDateTime::now_utc() {
         let new_token = generate_invitation_token(invitation_id, &state.config.api_key_hmac_secret);
-        let new_expires_at = OffsetDateTime::now_utc() + time::Duration::days(INVITATION_EXPIRY_DAYS);
+        let new_expires_at =
+            OffsetDateTime::now_utc() + time::Duration::days(INVITATION_EXPIRY_DAYS);
 
-        sqlx::query(
-            "UPDATE invitations SET token = $1, expires_at = $2 WHERE id = $3"
-        )
-        .bind(&new_token)
-        .bind(new_expires_at)
-        .bind(invitation_id)
-        .execute(&state.pool)
-        .await?;
+        sqlx::query("UPDATE invitations SET token = $1, expires_at = $2 WHERE id = $3")
+            .bind(&new_token)
+            .bind(new_expires_at)
+            .bind(invitation_id)
+            .execute(&state.pool)
+            .await?;
 
         (new_token, new_expires_at)
     } else {
@@ -465,7 +474,8 @@ pub async fn resend_invitation(
             .bind(inviter_id)
             .fetch_optional(&state.pool)
             .await?;
-        info.map(|i| i.0).unwrap_or_else(|| "A team member".to_string())
+        info.map(|i| i.0)
+            .unwrap_or_else(|| "A team member".to_string())
     } else {
         "A team member".to_string()
     };
@@ -479,14 +489,16 @@ pub async fn resend_invitation(
     let days = ((expires_at - OffsetDateTime::now_utc()).whole_days() + 1) as i32;
 
     tokio::spawn(async move {
-        email_service.send_invitation_email(
-            &to_email,
-            &org_name,
-            &inviter_email,
-            &role,
-            &accept_url,
-            days,
-        ).await;
+        email_service
+            .send_invitation_email(
+                &to_email,
+                &org_name,
+                &inviter_email,
+                &role,
+                &accept_url,
+                days,
+            )
+            .await;
     });
 
     Ok((StatusCode::OK, Json(serde_json::json!({"success": true}))))
@@ -507,7 +519,7 @@ pub async fn cancel_invitation(
 
     // Delete the invitation
     let result = sqlx::query(
-        "DELETE FROM invitations WHERE id = $1 AND org_id = $2 AND accepted_at IS NULL"
+        "DELETE FROM invitations WHERE id = $1 AND org_id = $2 AND accepted_at IS NULL",
     )
     .bind(invitation_id)
     .bind(org_id)
@@ -531,19 +543,20 @@ pub async fn validate_invitation(
     Query(query): Query<ValidateInvitationQuery>,
 ) -> ApiResult<Json<InvitationValidationResponse>> {
     // Validate token format
-    let invitation_id = match validate_invitation_token(&query.token, &state.config.api_key_hmac_secret) {
-        Some(id) => id,
-        None => {
-            return Ok(Json(InvitationValidationResponse {
-                valid: false,
-                org_name: None,
-                inviter_name: None,
-                email: None,
-                role: None,
-                expires_at: None,
-            }));
-        }
-    };
+    let invitation_id =
+        match validate_invitation_token(&query.token, &state.config.api_key_hmac_secret) {
+            Some(id) => id,
+            None => {
+                return Ok(Json(InvitationValidationResponse {
+                    valid: false,
+                    org_name: None,
+                    inviter_name: None,
+                    email: None,
+                    role: None,
+                    expires_at: None,
+                }));
+            }
+        };
 
     // Look up invitation with org details
     let invitation: Option<InvitationWithOrgRow> = sqlx::query_as(
@@ -556,7 +569,7 @@ pub async fn validate_invitation(
         JOIN organizations o ON o.id = i.org_id
         LEFT JOIN users u ON u.id = i.invited_by
         WHERE i.id = $1 AND i.token = $2
-        "#
+        "#,
     )
     .bind(invitation_id)
     .bind(&query.token)
@@ -590,13 +603,12 @@ pub async fn validate_invitation(
     }
 
     // Check if already accepted by looking for a user with this email in the org
-    let already_accepted: Option<(bool,)> = sqlx::query_as(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1 AND org_id = $2)"
-    )
-    .bind(&invitation.email)
-    .bind(invitation.org_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let already_accepted: Option<(bool,)> =
+        sqlx::query_as("SELECT EXISTS(SELECT 1 FROM users WHERE email = $1 AND org_id = $2)")
+            .bind(&invitation.email)
+            .bind(invitation.org_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if already_accepted.map(|r| r.0).unwrap_or(false) {
         return Ok(Json(InvitationValidationResponse {
@@ -637,7 +649,7 @@ pub async fn accept_invitation(
         SELECT id, org_id, email, role, token, invited_by, expires_at, accepted_at, created_at
         FROM invitations
         WHERE id = $1 AND token = $2
-        "#
+        "#,
     )
     .bind(invitation_id)
     .bind(&req.token)
@@ -647,25 +659,30 @@ pub async fn accept_invitation(
 
     // Check if expired
     if invitation.expires_at < OffsetDateTime::now_utc() {
-        return Err(ApiError::Validation("This invitation has expired".to_string()));
+        return Err(ApiError::Validation(
+            "This invitation has expired".to_string(),
+        ));
     }
 
     // Check if already accepted
     if invitation.accepted_at.is_some() {
-        return Err(ApiError::Validation("This invitation has already been accepted".to_string()));
+        return Err(ApiError::Validation(
+            "This invitation has already been accepted".to_string(),
+        ));
     }
 
     // Check if user already exists in this org
-    let existing_user: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM users WHERE email = $1 AND org_id = $2"
-    )
-    .bind(&invitation.email)
-    .bind(invitation.org_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let existing_user: Option<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM users WHERE email = $1 AND org_id = $2")
+            .bind(&invitation.email)
+            .bind(invitation.org_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if existing_user.is_some() {
-        return Err(ApiError::Validation("An account with this email already exists in this organization".to_string()));
+        return Err(ApiError::Validation(
+            "An account with this email already exists in this organization".to_string(),
+        ));
     }
 
     // Get org name for response
@@ -680,7 +697,9 @@ pub async fn accept_invitation(
     // Handle account creation based on method
     if let Some(ref _oauth_provider) = req.oauth_provider {
         // OAuth-based account creation
-        let access_token = req.oauth_access_token.as_ref()
+        let access_token = req
+            .oauth_access_token
+            .as_ref()
             .ok_or_else(|| ApiError::Validation("OAuth access token required".to_string()))?;
 
         // Verify the OAuth token via Supabase
@@ -721,33 +740,30 @@ pub async fn accept_invitation(
         })?;
 
         // Verify the email matches the invitation
-        let oauth_email = supabase_user.email.as_ref()
+        let oauth_email = supabase_user
+            .email
+            .as_ref()
             .ok_or_else(|| ApiError::Validation("OAuth account must have an email".to_string()))?;
 
         if oauth_email.to_lowercase() != invitation.email.to_lowercase() {
             return Err(ApiError::Validation(
-                "OAuth account email does not match the invitation email".to_string()
+                "OAuth account email does not match the invitation email".to_string(),
             ));
         }
 
         // Use the Supabase user ID
-        user_id = Uuid::parse_str(&supabase_user.id)
-            .map_err(|_| ApiError::Internal)?;
+        user_id = Uuid::parse_str(&supabase_user.id).map_err(|_| ApiError::Internal)?;
         // SOC 2 CC6.1: Generate cryptographically random hash for OAuth users
-        password_hash = generate_impossible_hash()
-            .map_err(|_| ApiError::Internal)?;
-
+        password_hash = generate_impossible_hash().map_err(|_| ApiError::Internal)?;
     } else if let Some(ref password) = req.password {
         // Password-based account creation
-        validate_password_strength(password)
-            .map_err(|e| ApiError::Validation(e.to_string()))?;
+        validate_password_strength(password).map_err(|e| ApiError::Validation(e.to_string()))?;
 
         user_id = Uuid::new_v4();
-        password_hash = hash_password(password)
-            .map_err(|_| ApiError::Internal)?;
+        password_hash = hash_password(password).map_err(|_| ApiError::Internal)?;
     } else {
         return Err(ApiError::Validation(
-            "Either password or OAuth provider is required".to_string()
+            "Either password or OAuth provider is required".to_string(),
         ));
     }
 
@@ -758,7 +774,7 @@ pub async fn accept_invitation(
         r#"
         INSERT INTO users (id, org_id, email, password_hash, role, email_verified)
         VALUES ($1, $2, $3, $4, $5, TRUE)
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(invitation.org_id)
@@ -768,23 +784,27 @@ pub async fn accept_invitation(
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query(
-        "UPDATE invitations SET accepted_at = NOW() WHERE id = $1"
-    )
-    .bind(invitation_id)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("UPDATE invitations SET accepted_at = NOW() WHERE id = $1")
+        .bind(invitation_id)
+        .execute(&mut *tx)
+        .await?;
 
     tx.commit().await?;
 
     // Generate JWT tokens
     let (access_token, access_jti, refresh_token, refresh_jti) = state
         .jwt_manager
-        .generate_token_pair(user_id, invitation.org_id, &invitation.role, &invitation.email)
+        .generate_token_pair(
+            user_id,
+            invitation.org_id,
+            &invitation.role,
+            &invitation.email,
+        )
         .map_err(|_| ApiError::Internal)?;
 
     // Save session for revocation support
-    let access_expires_at = OffsetDateTime::now_utc() + Duration::hours(state.config.jwt_expiry_hours);
+    let access_expires_at =
+        OffsetDateTime::now_utc() + Duration::hours(state.config.jwt_expiry_hours);
     let refresh_expires_at = OffsetDateTime::now_utc() + Duration::days(30);
     sessions::save_session(
         &state.pool,
@@ -795,14 +815,17 @@ pub async fn accept_invitation(
         refresh_expires_at,
         ip_address.as_deref(),
         user_agent.as_deref(),
-    ).await?;
+    )
+    .await?;
 
     // Send welcome email (fire and forget)
     let email_service = state.security_email.clone();
     let to_email = invitation.email.clone();
     let org_name_for_email = org_info.0.clone();
     tokio::spawn(async move {
-        email_service.send_invitation_accepted(&to_email, &org_name_for_email).await;
+        email_service
+            .send_invitation_accepted(&to_email, &org_name_for_email)
+            .await;
     });
 
     Ok(Json(AcceptInvitationResponse {
@@ -837,19 +860,25 @@ struct OrgLimitData {
 }
 
 /// Get organization's effective limits (tier + custom overrides)
-async fn get_org_effective_limits(pool: &sqlx::PgPool, org_id: Uuid) -> Result<EffectiveLimits, ApiError> {
+async fn get_org_effective_limits(
+    pool: &sqlx::PgPool,
+    org_id: Uuid,
+) -> Result<EffectiveLimits, ApiError> {
     let result: Option<OrgLimitData> = sqlx::query_as(
         r#"SELECT subscription_tier, custom_max_mcps, custom_max_api_keys,
                   custom_max_team_members, custom_max_requests_monthly,
                   custom_overage_rate_cents, custom_monthly_price_cents
-           FROM organizations WHERE id = $1"#
+           FROM organizations WHERE id = $1"#,
     )
     .bind(org_id)
     .fetch_optional(pool)
     .await?;
 
     let data = result.ok_or(ApiError::NotFound)?;
-    let tier: SubscriptionTier = data.subscription_tier.parse().unwrap_or(SubscriptionTier::Free);
+    let tier: SubscriptionTier = data
+        .subscription_tier
+        .parse()
+        .unwrap_or(SubscriptionTier::Free);
     let custom = CustomLimits {
         max_mcps: data.custom_max_mcps.map(|v| v as u32),
         max_api_keys: data.custom_max_api_keys.map(|v| v as u32),

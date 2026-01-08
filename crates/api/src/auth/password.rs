@@ -59,9 +59,9 @@ pub fn validate_password_strength(password: &str) -> Result<(), PasswordValidati
     let has_lowercase = password.chars().any(|c| c.is_ascii_lowercase());
     let has_uppercase = password.chars().any(|c| c.is_ascii_uppercase());
     let has_digit = password.chars().any(|c| c.is_ascii_digit());
-    let has_special = password.chars().any(|c| {
-        "!@#$%^&*()_+-=[]{}|;:,.<>?/~`".contains(c)
-    });
+    let has_special = password
+        .chars()
+        .any(|c| "!@#$%^&*()_+-=[]{}|;:,.<>?/~`".contains(c));
 
     if !has_lowercase {
         return Err(PasswordValidationError::MissingLowercase);
@@ -94,33 +94,108 @@ fn is_common_password(password: &str) -> bool {
 
     // Top 100 most common passwords (case-insensitive)
     const COMMON_PASSWORDS: &[&str] = &[
-        "password", "password123", "password1", "password12",
-        "123456", "12345678", "123456789", "1234567890",
-        "qwerty", "qwerty123", "abc123", "abcd1234",
-        "letmein", "welcome", "welcome123", "admin",
-        "admin123", "root", "root123", "toor",
-        "pass", "pass123", "passw0rd", "p@ssw0rd",
-        "p@ssword", "password!", "password1!", "password123!",
-        "monkey", "dragon", "master", "sunshine",
-        "princess", "football", "iloveyou", "shadow",
-        "michael", "jennifer", "computer", "trustno1",
-        "baseball", "superman", "batman", "starwars",
-        "hello", "hello123", "freedom", "whatever",
-        "qazwsx", "qweasd", "1q2w3e4r", "1qaz2wsx",
-        "zaq12wsx", "abc12345", "mypassword", "changeme",
-        "111111", "000000", "123123", "123321",
-        "654321", "123qwe", "qwe123", "1234",
-        "12345", "123456", "1234567", "12345678",
-        "123456789", "test", "test123", "testtest",
-        "guest", "guest123", "user", "user123",
-        "default", "temptemp", "sample", "example",
-        "demo", "demo123", "asdfgh", "zxcvbn",
-        "qwertyuiop", "asdfghjkl", "zxcvbnm",
-        "password1234", "password12345", "mypassword123",
-        "welcome1", "welcome12", "welcome123",
-        "master123", "admin1234", "administrator",
-        "secret", "secret123", "letmein123",
-        "password@123", "password#123", "qwerty12345",
+        "password",
+        "password123",
+        "password1",
+        "password12",
+        "123456",
+        "12345678",
+        "123456789",
+        "1234567890",
+        "qwerty",
+        "qwerty123",
+        "abc123",
+        "abcd1234",
+        "letmein",
+        "welcome",
+        "welcome123",
+        "admin",
+        "admin123",
+        "root",
+        "root123",
+        "toor",
+        "pass",
+        "pass123",
+        "passw0rd",
+        "p@ssw0rd",
+        "p@ssword",
+        "password!",
+        "password1!",
+        "password123!",
+        "monkey",
+        "dragon",
+        "master",
+        "sunshine",
+        "princess",
+        "football",
+        "iloveyou",
+        "shadow",
+        "michael",
+        "jennifer",
+        "computer",
+        "trustno1",
+        "baseball",
+        "superman",
+        "batman",
+        "starwars",
+        "hello",
+        "hello123",
+        "freedom",
+        "whatever",
+        "qazwsx",
+        "qweasd",
+        "1q2w3e4r",
+        "1qaz2wsx",
+        "zaq12wsx",
+        "abc12345",
+        "mypassword",
+        "changeme",
+        "111111",
+        "000000",
+        "123123",
+        "123321",
+        "654321",
+        "123qwe",
+        "qwe123",
+        "1234",
+        "12345",
+        "123456",
+        "1234567",
+        "12345678",
+        "123456789",
+        "test",
+        "test123",
+        "testtest",
+        "guest",
+        "guest123",
+        "user",
+        "user123",
+        "default",
+        "temptemp",
+        "sample",
+        "example",
+        "demo",
+        "demo123",
+        "asdfgh",
+        "zxcvbn",
+        "qwertyuiop",
+        "asdfghjkl",
+        "zxcvbnm",
+        "password1234",
+        "password12345",
+        "mypassword123",
+        "welcome1",
+        "welcome12",
+        "welcome123",
+        "master123",
+        "admin1234",
+        "administrator",
+        "secret",
+        "secret123",
+        "letmein123",
+        "password@123",
+        "password#123",
+        "qwerty12345",
     ];
 
     COMMON_PASSWORDS.contains(&password_lower.as_str())
@@ -147,9 +222,9 @@ pub fn calculate_password_strength(password: &str) -> PasswordStrength {
     let has_lowercase = password.chars().any(|c| c.is_ascii_lowercase());
     let has_uppercase = password.chars().any(|c| c.is_ascii_uppercase());
     let has_digit = password.chars().any(|c| c.is_ascii_digit());
-    let has_special = password.chars().any(|c| {
-        "!@#$%^&*()_+-=[]{}|;:,.<>?/~`".contains(c)
-    });
+    let has_special = password
+        .chars()
+        .any(|c| "!@#$%^&*()_+-=[]{}|;:,.<>?/~`".contains(c));
 
     let char_types = [has_lowercase, has_uppercase, has_digit, has_special]
         .iter()
@@ -182,9 +257,11 @@ pub fn calculate_password_strength(password: &str) -> PasswordStrength {
     }
 
     // Repeated characters penalty
-    let has_repeated = password.chars().collect::<Vec<_>>().windows(3).any(|w| {
-        w[0] == w[1] && w[1] == w[2]
-    });
+    let has_repeated = password
+        .chars()
+        .collect::<Vec<_>>()
+        .windows(3)
+        .any(|w| w[0] == w[1] && w[1] == w[2]);
 
     if has_repeated {
         score = score.saturating_sub(1);
@@ -339,7 +416,10 @@ mod tests {
 
         // Weak: short, missing variety
         let strength = calculate_password_strength("Short1!");
-        assert!(matches!(strength.level, PasswordStrengthLevel::VeryWeak | PasswordStrengthLevel::Weak));
+        assert!(matches!(
+            strength.level,
+            PasswordStrengthLevel::VeryWeak | PasswordStrengthLevel::Weak
+        ));
 
         // Fair: meets basic requirements (12+ chars, 3 types)
         let strength = calculate_password_strength("ValidPass123");
@@ -358,7 +438,7 @@ mod tests {
 
         // Passwords with repeated characters get penalty
         let strength = calculate_password_strength("Paaassword123!");
-        assert!(strength.score < 4);  // Should be penalized
+        assert!(strength.score < 4); // Should be penalized
     }
 
     #[test]

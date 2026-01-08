@@ -86,9 +86,7 @@ pub enum ServerEvent {
     },
 
     /// Batch presence data (sent on initial connection)
-    PresenceBatch {
-        users: Vec<UserPresence>,
-    },
+    PresenceBatch { users: Vec<UserPresence> },
 
     /// Ticket viewers list updated
     ViewersUpdate {

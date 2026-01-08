@@ -143,7 +143,7 @@ pub async fn export_user_data(
         JOIN organization_members om ON om.org_id = o.id
         WHERE om.user_id = $1
         ORDER BY om.created_at DESC
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&state.pool)
@@ -164,7 +164,7 @@ pub async fn export_user_data(
             SELECT org_id FROM organization_members WHERE user_id = $1
         )
         ORDER BY ak.created_at DESC
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&state.pool)
@@ -183,7 +183,7 @@ pub async fn export_user_data(
         FROM support_tickets
         WHERE user_id = $1
         ORDER BY created_at DESC
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&state.pool)
@@ -203,7 +203,7 @@ pub async fn export_user_data(
         AND created_at > NOW() - INTERVAL '90 days'
         ORDER BY created_at DESC
         LIMIT 1000
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&state.pool)
@@ -223,7 +223,7 @@ pub async fn export_user_data(
         )
         AND date > CURRENT_DATE - INTERVAL '90 days'
         ORDER BY date DESC
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&state.pool)
@@ -304,7 +304,7 @@ pub async fn get_deletion_status(
         AND cancelled_at IS NULL
         ORDER BY requested_at DESC
         LIMIT 1
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_optional(&state.pool)

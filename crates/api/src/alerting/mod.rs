@@ -132,14 +132,13 @@ impl AlertService {
         };
 
         // Increment threshold and check if alert should be triggered
-        let should_trigger: bool = sqlx::query_scalar(
-            "SELECT increment_alert_threshold($1, $2, $3)"
-        )
-        .bind(alert_type.as_str())
-        .bind(threshold_key)
-        .bind(window_seconds)
-        .fetch_one(&self.pool)
-        .await?;
+        let should_trigger: bool =
+            sqlx::query_scalar("SELECT increment_alert_threshold($1, $2, $3)")
+                .bind(alert_type.as_str())
+                .bind(threshold_key)
+                .bind(window_seconds)
+                .fetch_one(&self.pool)
+                .await?;
 
         if !should_trigger {
             return Ok(None);
@@ -157,15 +156,17 @@ impl AlertService {
         };
 
         // Create alert
-        let alert_id = self.create_alert(
-            alert_type,
-            severity,
-            user_id,
-            org_id,
-            ip_address,
-            threshold_count,
-            metadata,
-        ).await?;
+        let alert_id = self
+            .create_alert(
+                alert_type,
+                severity,
+                user_id,
+                org_id,
+                ip_address,
+                threshold_count,
+                metadata,
+            )
+            .await?;
 
         // Send notification (fire and forget)
         let alert_for_notification = self.get_alert(alert_id).await?;
@@ -337,7 +338,12 @@ impl AlertService {
     }
 
     /// Mark alert as notified
-    pub async fn mark_notified(&self, alert_id: Uuid, success: bool, error: Option<&str>) -> ApiResult<()> {
+    pub async fn mark_notified(
+        &self,
+        alert_id: Uuid,
+        success: bool,
+        error: Option<&str>,
+    ) -> ApiResult<()> {
         let status = if success { "sent" } else { "failed" };
 
         sqlx::query(

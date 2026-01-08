@@ -29,7 +29,7 @@ pub struct CircuitBreakerConfig {
 impl Default for CircuitBreakerConfig {
     fn default() -> Self {
         Self {
-            failure_threshold: 5,  // Open after 5 consecutive failures
+            failure_threshold: 5, // Open after 5 consecutive failures
             min_backoff: Duration::from_secs(1),
             max_backoff: Duration::from_secs(60),
         }
@@ -92,7 +92,7 @@ impl McpCircuitBreakerManager {
             }
         }
 
-        true  // Circuit closed or doesn't exist - allow call
+        true // Circuit closed or doesn't exist - allow call
     }
 
     /// Record a successful call - resets circuit breaker
@@ -115,13 +115,19 @@ impl McpCircuitBreakerManager {
     pub async fn record_failure(&self, mcp_id: Uuid) {
         let mut breakers = self.breakers.write().await;
 
-        let state = breakers.entry(mcp_id).or_insert_with(CircuitBreakerState::default);
+        let state = breakers
+            .entry(mcp_id)
+            .or_insert_with(CircuitBreakerState::default);
         state.consecutive_failures += 1;
         state.last_failure_time = Some(Instant::now());
 
         // Calculate exponential backoff
         if state.consecutive_failures >= self.config.failure_threshold {
-            let backoff_multiplier = 2u32.pow(state.consecutive_failures.saturating_sub(self.config.failure_threshold));
+            let backoff_multiplier = 2u32.pow(
+                state
+                    .consecutive_failures
+                    .saturating_sub(self.config.failure_threshold),
+            );
             state.current_backoff = self.config.min_backoff * backoff_multiplier;
 
             if state.current_backoff > self.config.max_backoff {
@@ -145,7 +151,11 @@ impl McpCircuitBreakerManager {
     }
 
     /// Execute an async operation with circuit breaker protection
-    pub async fn call<F, Fut, T, E>(&self, mcp_id: Uuid, operation: F) -> Result<T, CircuitBreakerError<E>>
+    pub async fn call<F, Fut, T, E>(
+        &self,
+        mcp_id: Uuid,
+        operation: F,
+    ) -> Result<T, CircuitBreakerError<E>>
     where
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<T, E>>,

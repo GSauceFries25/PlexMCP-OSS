@@ -81,7 +81,10 @@ impl SecurityEmailService {
         let response = self
             .client
             .post("https://api.resend.com/emails")
-            .header("Authorization", format!("Bearer {}", self.config.resend_api_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.config.resend_api_key),
+            )
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
@@ -109,7 +112,12 @@ impl SecurityEmailService {
     /// Send 2FA enabled notification
     pub async fn send_2fa_enabled(&self, to: &str, ip_address: Option<&str>) {
         let ip_info = ip_address
-            .map(|ip| format!("<p style=\"color: #666; font-size: 14px;\">IP Address: {}</p>", ip))
+            .map(|ip| {
+                format!(
+                    "<p style=\"color: #666; font-size: 14px;\">IP Address: {}</p>",
+                    ip
+                )
+            })
             .unwrap_or_default();
 
         let settings_link = format!("{}/settings", self.config.dashboard_url);
@@ -148,7 +156,10 @@ impl SecurityEmailService {
 
         self.send_email(
             to,
-            &format!("Two-Factor Authentication Enabled - {}", self.config.app_name),
+            &format!(
+                "Two-Factor Authentication Enabled - {}",
+                self.config.app_name
+            ),
             &html,
         )
         .await;
@@ -157,7 +168,12 @@ impl SecurityEmailService {
     /// Send 2FA disabled notification
     pub async fn send_2fa_disabled(&self, to: &str, ip_address: Option<&str>) {
         let ip_info = ip_address
-            .map(|ip| format!("<p style=\"color: #666; font-size: 14px;\">IP Address: {}</p>", ip))
+            .map(|ip| {
+                format!(
+                    "<p style=\"color: #666; font-size: 14px;\">IP Address: {}</p>",
+                    ip
+                )
+            })
             .unwrap_or_default();
 
         let settings_link = format!("{}/settings", self.config.dashboard_url);
@@ -195,7 +211,10 @@ impl SecurityEmailService {
 
         self.send_email(
             to,
-            &format!("Two-Factor Authentication Disabled - {}", self.config.app_name),
+            &format!(
+                "Two-Factor Authentication Disabled - {}",
+                self.config.app_name
+            ),
             &html,
         )
         .await;
@@ -204,7 +223,12 @@ impl SecurityEmailService {
     /// Send password changed notification
     pub async fn send_password_changed(&self, to: &str, ip_address: Option<&str>) {
         let ip_info = ip_address
-            .map(|ip| format!("<p style=\"color: #666; font-size: 14px;\">IP Address: {}</p>", ip))
+            .map(|ip| {
+                format!(
+                    "<p style=\"color: #666; font-size: 14px;\">IP Address: {}</p>",
+                    ip
+                )
+            })
             .unwrap_or_default();
 
         let settings_link = format!("{}/settings", self.config.dashboard_url);
@@ -251,7 +275,12 @@ impl SecurityEmailService {
     /// Send account linked notification (OAuth provider connected)
     pub async fn send_account_linked(&self, to: &str, provider: &str, ip_address: Option<&str>) {
         let ip_info = ip_address
-            .map(|ip| format!("<p style=\"color: #666; font-size: 14px;\">IP Address: {}</p>", ip))
+            .map(|ip| {
+                format!(
+                    "<p style=\"color: #666; font-size: 14px;\">IP Address: {}</p>",
+                    ip
+                )
+            })
             .unwrap_or_default();
 
         let settings_link = format!("{}/settings", self.config.dashboard_url);
@@ -294,7 +323,10 @@ impl SecurityEmailService {
 
         self.send_email(
             to,
-            &format!("{} Account Connected - {}", provider_display, self.config.app_name),
+            &format!(
+                "{} Account Connected - {}",
+                provider_display, self.config.app_name
+            ),
             &html,
         )
         .await;
@@ -303,7 +335,12 @@ impl SecurityEmailService {
     /// Send account unlinked notification (OAuth provider disconnected)
     pub async fn send_account_unlinked(&self, to: &str, provider: &str, ip_address: Option<&str>) {
         let ip_info = ip_address
-            .map(|ip| format!("<p style=\"color: #666; font-size: 14px;\">IP Address: {}</p>", ip))
+            .map(|ip| {
+                format!(
+                    "<p style=\"color: #666; font-size: 14px;\">IP Address: {}</p>",
+                    ip
+                )
+            })
             .unwrap_or_default();
 
         let settings_link = format!("{}/settings", self.config.dashboard_url);
@@ -347,7 +384,10 @@ impl SecurityEmailService {
 
         self.send_email(
             to,
-            &format!("{} Account Disconnected - {}", provider_display, self.config.app_name),
+            &format!(
+                "{} Account Disconnected - {}",
+                provider_display, self.config.app_name
+            ),
             &html,
         )
         .await;
@@ -410,7 +450,10 @@ impl SecurityEmailService {
 
         self.send_email(
             to,
-            &format!("You've been invited to join {} on {}", org_name, self.config.app_name),
+            &format!(
+                "You've been invited to join {} on {}",
+                org_name, self.config.app_name
+            ),
             &html,
         )
         .await;
@@ -519,8 +562,7 @@ impl SecurityEmailService {
     pub async fn send_email_verification(&self, to: &str, verification_token: &str) {
         let verification_link = format!(
             "{}/auth/verify-email?token={}",
-            self.config.dashboard_url,
-            verification_token
+            self.config.dashboard_url, verification_token
         );
 
         let html = format!(
@@ -569,8 +611,7 @@ impl SecurityEmailService {
     pub async fn send_password_reset(&self, to: &str, reset_token: &str) {
         let reset_link = format!(
             "{}/auth/reset-password?token={}",
-            self.config.dashboard_url,
-            reset_token
+            self.config.dashboard_url, reset_token
         );
 
         let html = format!(
@@ -677,7 +718,10 @@ impl SecurityEmailService {
 
         self.send_email(
             to,
-            &format!("Service Suspended - {} - {}", org_name, self.config.app_name),
+            &format!(
+                "Service Suspended - {} - {}",
+                org_name, self.config.app_name
+            ),
             &html,
         )
         .await;

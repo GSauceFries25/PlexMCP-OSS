@@ -23,9 +23,8 @@ fn get_notification_thresholds() -> &'static [i32] {
         std::env::var("SPEND_CAP_NOTIFICATION_THRESHOLDS")
             .ok()
             .and_then(|s| {
-                let parsed: Result<Vec<i32>, _> = s.split(',')
-                    .map(|v| v.trim().parse::<i32>())
-                    .collect();
+                let parsed: Result<Vec<i32>, _> =
+                    s.split(',').map(|v| v.trim().parse::<i32>()).collect();
                 parsed.ok()
             })
             .unwrap_or_else(|| DEFAULT_NOTIFICATION_THRESHOLDS.to_vec())
@@ -82,19 +81,11 @@ pub enum SpendCapCheckResult {
     /// No cap configured for this org
     NoCap,
     /// Within cap limits
-    Ok {
-        spend_cents: i32,
-        percentage: f64,
-    },
+    Ok { spend_cents: i32, percentage: f64 },
     /// Cap exceeded and org is paused
-    Paused {
-        spend_cents: i32,
-    },
+    Paused { spend_cents: i32 },
     /// Cap exceeded but hard pause not enabled
-    Exceeded {
-        spend_cents: i32,
-        percentage: f64,
-    },
+    Exceeded { spend_cents: i32, percentage: f64 },
 }
 
 /// Spend cap service
@@ -114,7 +105,7 @@ impl SpendCapService {
             "SELECT id, org_id, cap_amount_cents, hard_pause_enabled, is_paused, paused_at,
                     current_period_spend_cents, last_charge_at, override_until,
                     override_by_user_id, override_reason, created_at, updated_at
-             FROM spend_caps WHERE org_id = $1"
+             FROM spend_caps WHERE org_id = $1",
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -126,7 +117,8 @@ impl SpendCapService {
     pub async fn get_status(&self, org_id: Uuid) -> BillingResult<SpendCapStatus> {
         match self.get_spend_cap(org_id).await? {
             Some(cap) => {
-                let has_override = cap.override_until
+                let has_override = cap
+                    .override_until
                     .map(|t| t > OffsetDateTime::now_utc())
                     .unwrap_or(false);
 
@@ -135,7 +127,8 @@ impl SpendCapService {
                     cap_amount_cents: Some(cap.cap_amount_cents),
                     current_spend_cents: cap.current_period_spend_cents,
                     percentage_used: if cap.cap_amount_cents > 0 {
-                        (cap.current_period_spend_cents as f64 / cap.cap_amount_cents as f64) * 100.0
+                        (cap.current_period_spend_cents as f64 / cap.cap_amount_cents as f64)
+                            * 100.0
                     } else {
                         0.0
                     },
@@ -169,7 +162,7 @@ impl SpendCapService {
         // Validate cap amount (minimum $10)
         if req.cap_amount_cents < 1000 {
             return Err(BillingError::InvalidInput(
-                "Spend cap must be at least $10.00".to_string()
+                "Spend cap must be at least $10.00".to_string(),
             ));
         }
 
@@ -182,7 +175,7 @@ impl SpendCapService {
                 hard_pause_enabled = EXCLUDED.hard_pause_enabled,
                 updated_at = NOW()
             RETURNING *
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(req.cap_amount_cents)
@@ -273,7 +266,8 @@ impl SpendCapService {
                         threshold,
                         new_spend,
                         cap.cap_amount_cents,
-                    ).await?;
+                    )
+                    .await?;
                 }
             }
         }
@@ -284,7 +278,9 @@ impl SpendCapService {
         if percentage >= 100.0 && cap.hard_pause_enabled && !cap.is_paused {
             let was_paused = self.try_pause_org_atomic(org_id).await?;
             if was_paused {
-                return Ok(SpendCapCheckResult::Paused { spend_cents: new_spend });
+                return Ok(SpendCapCheckResult::Paused {
+                    spend_cents: new_spend,
+                });
             }
             // If not paused (race condition - already paused by another request),
             // fall through to return Exceeded
@@ -322,7 +318,7 @@ impl SpendCapService {
             FROM overage_charges
             WHERE org_id = $1
               AND status IN ('pending', 'awaiting_payment', 'invoiced')
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_one(&self.pool)
@@ -375,7 +371,8 @@ impl SpendCapService {
                         threshold,
                         new_spend,
                         cap.cap_amount_cents,
-                    ).await?;
+                    )
+                    .await?;
                 }
             }
         }
@@ -385,7 +382,9 @@ impl SpendCapService {
         if percentage >= 100.0 && cap.hard_pause_enabled {
             let paused = self.try_pause_org_atomic(org_id).await?;
             if paused {
-                return Ok(SpendCapCheckResult::Paused { spend_cents: new_spend });
+                return Ok(SpendCapCheckResult::Paused {
+                    spend_cents: new_spend,
+                });
             }
         }
 
@@ -415,7 +414,7 @@ impl SpendCapService {
             UPDATE spend_caps
             SET is_paused = true, paused_at = NOW(), updated_at = NOW()
             WHERE org_id = $1 AND is_paused = false AND hard_pause_enabled = true
-            "#
+            "#,
         )
         .bind(org_id)
         .execute(&self.pool)
@@ -430,13 +429,14 @@ impl SpendCapService {
         tracing::warn!(org_id = %org_id, "Organization paused due to spend cap (atomic)");
 
         // Send notification email
-        if let Ok(Some((email, org_name, cap_cents, spend_cents))) = self.get_org_owner_for_notification(org_id).await {
-            if let Err(e) = self.email.send_api_paused(
-                &email,
-                &org_name,
-                spend_cents,
-                cap_cents,
-            ).await {
+        if let Ok(Some((email, org_name, cap_cents, spend_cents))) =
+            self.get_org_owner_for_notification(org_id).await
+        {
+            if let Err(e) = self
+                .email
+                .send_api_paused(&email, &org_name, spend_cents, cap_cents)
+                .await
+            {
                 tracing::error!(
                     org_id = %org_id,
                     email = %email,
@@ -481,7 +481,7 @@ impl SpendCapService {
                 updated_at = NOW()
             WHERE org_id = $4
             RETURNING *
-            "#
+            "#,
         )
         .bind(until)
         .bind(by_user_id)
@@ -510,7 +510,7 @@ impl SpendCapService {
                 override_reason = NULL,
                 updated_at = NOW()
             WHERE org_id = $1
-            "#
+            "#,
         )
         .bind(org_id)
         .execute(&self.pool)
@@ -564,14 +564,20 @@ impl SpendCapService {
 
         // Only send email if we actually inserted (wasn't a duplicate)
         if let Ok(Some(_)) = result {
-            if let Ok(Some((email, org_name, _, _))) = self.get_org_owner_for_notification(org_id).await {
-                if let Err(e) = self.email.send_spend_cap_threshold(
-                    &email,
-                    &org_name,
-                    threshold,
-                    current_spend,
-                    cap_amount,
-                ).await {
+            if let Ok(Some((email, org_name, _, _))) =
+                self.get_org_owner_for_notification(org_id).await
+            {
+                if let Err(e) = self
+                    .email
+                    .send_spend_cap_threshold(
+                        &email,
+                        &org_name,
+                        threshold,
+                        current_spend,
+                        cap_amount,
+                    )
+                    .await
+                {
                     tracing::error!(
                         org_id = %org_id,
                         email = %email,
@@ -603,7 +609,10 @@ impl SpendCapService {
     }
 
     /// Get org owner info for sending notifications
-    async fn get_org_owner_for_notification(&self, org_id: Uuid) -> BillingResult<Option<(String, String, i32, i32)>> {
+    async fn get_org_owner_for_notification(
+        &self,
+        org_id: Uuid,
+    ) -> BillingResult<Option<(String, String, i32, i32)>> {
         let result: Option<(String, String, i32, i32)> = sqlx::query_as(
             r#"
             SELECT u.email, o.name,
@@ -614,7 +623,7 @@ impl SpendCapService {
             LEFT JOIN spend_caps sc ON sc.org_id = o.id
             WHERE u.org_id = $1 AND u.role = 'owner'
             LIMIT 1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)

@@ -13,8 +13,8 @@
 
 #[cfg(test)]
 mod tests {
-    use sqlx::PgPool;
     use serial_test::serial;
+    use sqlx::PgPool;
 
     /// Helper to get production database pool
     async fn get_production_pool() -> PgPool {
@@ -43,7 +43,7 @@ mod tests {
         "users",
         "organizations",
         "api_keys",
-        "sessions",  // User sessions
+        "sessions", // User sessions
         // Subscription & billing
         "subscriptions",
         "usage_records",
@@ -72,7 +72,10 @@ mod tests {
             .bind(table_name)
             .fetch_optional(&pool)
             .await
-            .expect(&format!("Failed to check FORCE RLS for table: {}", table_name));
+            .expect(&format!(
+                "Failed to check FORCE RLS for table: {}",
+                table_name
+            ));
 
             assert!(
                 result.is_some(),
@@ -235,7 +238,10 @@ mod tests {
             0,
             "MT-R01 FAILED: Superadmin can bypass RLS on {} tables: {:?}",
             tables_without_force_rls.len(),
-            tables_without_force_rls.iter().map(|t| &t.0).collect::<Vec<_>>()
+            tables_without_force_rls
+                .iter()
+                .map(|t| &t.0)
+                .collect::<Vec<_>>()
         );
     }
 
@@ -252,13 +258,12 @@ mod tests {
         // Test that querying with NULL org_id returns no data
         // This validates the RLS policies properly filter
 
-        let result: Vec<(i64,)> = sqlx::query_as(
-            "SELECT COUNT(*) FROM users WHERE org_id IS NULL AND org_id = $1::uuid"
-        )
-        .bind(Option::<uuid::Uuid>::None)
-        .fetch_all(&pool)
-        .await
-        .expect("Query should execute");
+        let result: Vec<(i64,)> =
+            sqlx::query_as("SELECT COUNT(*) FROM users WHERE org_id IS NULL AND org_id = $1::uuid")
+                .bind(Option::<uuid::Uuid>::None)
+                .fetch_all(&pool)
+                .await
+                .expect("Query should execute");
 
         // Result should be empty or zero count
         let count = result.first().map(|r| r.0).unwrap_or(0);
@@ -277,8 +282,8 @@ mod tests {
         let pool = get_production_pool().await;
         // List of tables that should NOT have RLS (system tables, global data)
         let exempt_tables = [
-            "_sqlx_migrations",       // SQLx system table
-            "subdomain_words",        // Global lookup data for subdomain generation
+            "_sqlx_migrations", // SQLx system table
+            "subdomain_words",  // Global lookup data for subdomain generation
         ];
 
         // Get all tables without RLS

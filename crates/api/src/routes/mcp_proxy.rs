@@ -108,7 +108,8 @@ pub async fn handle_mcp_request(
     // 4. Validate API key and get the org_id plus MCP access control settings
     let ip_address = extract_ip_from_headers(&headers);
     let user_agent = extract_user_agent(&headers);
-    let api_key_validation = match validate_api_key(&state, &api_key, ip_address, user_agent).await {
+    let api_key_validation = match validate_api_key(&state, &api_key, ip_address, user_agent).await
+    {
         Ok(validation) => validation,
         Err(e) => {
             return error_response(
@@ -124,11 +125,15 @@ pub async fn handle_mcp_request(
     };
 
     // 4.5. Check rate limit for this API key
-    match state.rate_limiter.check_api_key(
-        api_key_validation.org_id,
-        api_key_validation.api_key_id,
-        api_key_validation.rate_limit_rpm,
-    ).await {
+    match state
+        .rate_limiter
+        .check_api_key(
+            api_key_validation.org_id,
+            api_key_validation.api_key_id,
+            api_key_validation.rate_limit_rpm,
+        )
+        .await
+    {
         Ok(result) if !result.allowed => {
             tracing::warn!(
                 api_key_id = %api_key_validation.api_key_id,
@@ -235,13 +240,17 @@ pub async fn handle_mcp_request(
             let dashboard_url = if state.config.base_domain == "localhost" {
                 "http://localhost:3000/billing?upgrade=true".to_string()
             } else {
-                format!("https://dashboard.{}/billing?upgrade=true", state.config.base_domain)
+                format!(
+                    "https://dashboard.{}/billing?upgrade=true",
+                    state.config.base_domain
+                )
             };
             return error_response(
                 None,
                 JsonRpcError {
                     code: -32029, // Custom rate limit exceeded code
-                    message: "Monthly request limit exceeded. Upgrade your plan to continue.".to_string(),
+                    message: "Monthly request limit exceeded. Upgrade your plan to continue."
+                        .to_string(),
                     data: Some(serde_json::json!({
                         "upgrade_url": dashboard_url,
                         "upgrade_message": upgrade_message,
@@ -350,14 +359,24 @@ pub async fn handle_mcp_request(
         Arc::new(state.config.clone()),
         state.mcp_client.clone(),
     );
-    let tracked_response = handler.handle_request_filtered(org_id, request.clone(), mcp_filter).await;
+    let tracked_response = handler
+        .handle_request_filtered(org_id, request.clone(), mcp_filter)
+        .await;
 
     // Calculate latency
     let latency_ms = start_time.elapsed().as_millis() as i32;
 
     // Log the request for usage tracking (including billing)
     // Pass the tracked response to enable per-MCP usage recording
-    log_request(&state, &api_key, org_id, &request, &tracked_response, latency_ms).await;
+    log_request(
+        &state,
+        &api_key,
+        org_id,
+        &request,
+        &tracked_response,
+        latency_ms,
+    )
+    .await;
 
     if wants_stream {
         // Return SSE stream
@@ -376,7 +395,10 @@ fn extract_api_key(headers: &HeaderMap) -> Option<String> {
     }
 
     // Try Authorization header with Bearer token
-    if let Some(auth) = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) {
+    if let Some(auth) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    {
         if let Some(key) = auth.strip_prefix("Bearer ") {
             return Some(key.to_string());
         }
@@ -452,7 +474,7 @@ async fn check_monthly_limit(state: &AppState, org_id: Uuid) -> Result<MonthlyLi
 
     // Check if overages are disabled for this org (admin override)
     let overages_disabled_by_admin: bool = sqlx::query_scalar(
-        "SELECT COALESCE(overages_disabled, false) FROM organizations WHERE id = $1"
+        "SELECT COALESCE(overages_disabled, false) FROM organizations WHERE id = $1",
     )
     .bind(org_id)
     .fetch_optional(&state.pool)
@@ -653,15 +675,14 @@ async fn log_request(
     #[derive(sqlx::FromRow)]
     struct KeyIdRow {
         id: Uuid,
-        created_by: Option<Uuid>,  // Nullable in api_keys table
+        created_by: Option<Uuid>, // Nullable in api_keys table
     }
 
-    let key_result: Result<Option<KeyIdRow>, _> = sqlx::query_as(
-        "SELECT id, created_by FROM api_keys WHERE key_hash = $1",
-    )
-    .bind(&key_hash)
-    .fetch_optional(&state.pool)
-    .await;
+    let key_result: Result<Option<KeyIdRow>, _> =
+        sqlx::query_as("SELECT id, created_by FROM api_keys WHERE key_hash = $1")
+            .bind(&key_hash)
+            .fetch_optional(&state.pool)
+            .await;
 
     let (api_key_id, user_id) = match key_result {
         Ok(Some(row)) => (row.id, row.created_by),
@@ -728,25 +749,29 @@ async fn log_request(
     if let Some(billing) = &state.billing {
         if tracked_response.accessed_mcp_ids.is_empty() {
             // No MCPs accessed (e.g., initialize, errors, non-tool methods)
-            let _ = billing.usage.record_event(UsageEvent {
-                org_id,
-                api_key_id: Some(api_key_id),
-                mcp_instance_id: None,
-                request_count: 1,
-                token_count: 0,
-                error_count: if is_error { 1 } else { 0 },
-                latency_ms: Some(latency_ms),
-            }).await;
+            let _ = billing
+                .usage
+                .record_event(UsageEvent {
+                    org_id,
+                    api_key_id: Some(api_key_id),
+                    mcp_instance_id: None,
+                    request_count: 1,
+                    token_count: 0,
+                    error_count: if is_error { 1 } else { 0 },
+                    latency_ms: Some(latency_ms),
+                })
+                .await;
         } else {
             // One or more MCPs accessed - create separate event per MCP
             // This ensures accurate per-MCP usage tracking for billing
-            let events: Vec<UsageEvent> = tracked_response.accessed_mcp_ids
+            let events: Vec<UsageEvent> = tracked_response
+                .accessed_mcp_ids
                 .iter()
                 .map(|&mcp_id| UsageEvent {
                     org_id,
                     api_key_id: Some(api_key_id),
                     mcp_instance_id: Some(mcp_id),
-                    request_count: 1,  // Always 1 per API request (not 1 per MCP)
+                    request_count: 1, // Always 1 per API request (not 1 per MCP)
                     token_count: 0,
                     error_count: if is_error { 1 } else { 0 },
                     latency_ms: Some(latency_ms),
@@ -763,16 +788,19 @@ async fn log_request(
         "none".to_string() // No MCP accessed (e.g., initialize, errors)
     } else if tracked_response.accessed_mcp_ids.len() == 1 {
         // Single MCP - try to resolve name from tool_name or resource_uri
-        tool_name.as_ref()
+        tool_name
+            .as_ref()
             .and_then(|t| t.split(':').next())
-            .or_else(|| resource_uri.as_ref().and_then(|u| {
-                if u.starts_with("plexmcp://") {
-                    u.strip_prefix("plexmcp://")
-                        .and_then(|s| s.split('/').next())
-                } else {
-                    None
-                }
-            }))
+            .or_else(|| {
+                resource_uri.as_ref().and_then(|u| {
+                    if u.starts_with("plexmcp://") {
+                        u.strip_prefix("plexmcp://")
+                            .and_then(|s| s.split('/').next())
+                    } else {
+                        None
+                    }
+                })
+            })
             .unwrap_or("unknown")
             .to_string()
     } else {
@@ -782,7 +810,7 @@ async fn log_request(
 
     let audit_log = McpRequestLog {
         request_id: Uuid::new_v4(),
-        user_id,  // Already Option<Uuid> from created_by column
+        user_id, // Already Option<Uuid> from created_by column
         organization_id: Some(org_id),
         tenant_id: None, // Not using multi-tenant isolation yet
         mcp_server_name,
@@ -797,8 +825,16 @@ async fn log_request(
         session_id: None, // API key auth doesn't have session
         source_ip: None, // Headers not available in log_request - could pass from handle_mcp_request
         user_agent: None, // Headers not available in log_request - could pass from handle_mcp_request
-        error_message: tracked_response.response.error.as_ref().map(|e| e.message.clone()),
-        error_code: tracked_response.response.error.as_ref().map(|e| format!("{}", e.code)),
+        error_message: tracked_response
+            .response
+            .error
+            .as_ref()
+            .map(|e| e.message.clone()),
+        error_code: tracked_response
+            .response
+            .error
+            .as_ref()
+            .map(|e| format!("{}", e.code)),
         rate_limit_hit: false, // Rate limiting checked before this function
         quota_exceeded: false, // Quota checked before this function
         metadata: Some(serde_json::json!({
@@ -848,7 +884,7 @@ fn stream_response(response: JsonRpcResponse) -> Response {
         Ok::<_, Infallible>(
             Event::default()
                 .event(event.event_type())
-                .data(event.to_sse_data())
+                .data(event.to_sse_data()),
         )
     });
 
@@ -856,7 +892,11 @@ fn stream_response(response: JsonRpcResponse) -> Response {
         .keep_alive(
             axum::response::sse::KeepAlive::new()
                 .interval(Duration::from_secs(15))
-                .event(Event::default().event("heartbeat").data("{\"type\":\"heartbeat\"}"))
+                .event(
+                    Event::default()
+                        .event("heartbeat")
+                        .data("{\"type\":\"heartbeat\"}"),
+                ),
         )
         .into_response()
 }
@@ -867,17 +907,16 @@ fn stream_response(response: JsonRpcResponse) -> Response {
 /// Currently not used, but provides foundation for future streaming aggregation.
 #[allow(dead_code)]
 fn stream_from_channel(
-    rx: tokio::sync::mpsc::Receiver<McpStreamEvent>
+    rx: tokio::sync::mpsc::Receiver<McpStreamEvent>,
 ) -> impl futures::Stream<Item = Result<Event, Infallible>> {
-    use tokio_stream::wrappers::ReceiverStream;
     use futures::StreamExt;
+    use tokio_stream::wrappers::ReceiverStream;
 
-    ReceiverStream::new(rx)
-        .map(|event| {
-            Ok(Event::default()
-                .event(event.event_type())
-                .data(event.to_sse_data()))
-        })
+    ReceiverStream::new(rx).map(|event| {
+        Ok(Event::default()
+            .event(event.event_type())
+            .data(event.to_sse_data()))
+    })
 }
 
 /// Format a number with thousands separators (e.g., 1000 -> "1,000")
@@ -916,11 +955,11 @@ fn log_mcp_auth_failure(
                 ip_address, user_agent, metadata, auth_method
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            "#
+            "#,
         )
         .bind(None::<Uuid>)
-        .bind("unknown")  // email required by schema
-        .bind("login_failed")  // matches CHECK constraint
+        .bind("unknown") // email required by schema
+        .bind("login_failed") // matches CHECK constraint
         .bind("warning")
         .bind(ip_address)
         .bind(user_agent)

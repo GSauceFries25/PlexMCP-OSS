@@ -3,9 +3,9 @@
 //! Enables streaming partial results as MCPs respond in aggregation requests,
 //! providing better user experience for long-running operations.
 
-use serde::{Serialize, Deserialize};
+use super::types::{JsonRpcError, JsonRpcResponse};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use super::types::{JsonRpcResponse, JsonRpcError};
 
 /// Events that can be streamed to the client via SSE
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,19 +20,15 @@ pub enum McpStreamEvent {
 
     /// Partial result (e.g., first MCP responded in aggregation)
     PartialResult {
-        source: String,  // MCP name
+        source: String, // MCP name
         data: Value,
     },
 
     /// Final complete result
-    FinalResult {
-        response: JsonRpcResponse,
-    },
+    FinalResult { response: JsonRpcResponse },
 
     /// Error occurred
-    Error {
-        error: JsonRpcError,
-    },
+    Error { error: JsonRpcError },
 
     /// Heartbeat to keep connection alive
     Heartbeat,

@@ -129,13 +129,12 @@ impl TaxService {
         country: Option<&str>,
     ) -> BillingResult<TaxId> {
         // Get organization's Stripe customer ID
-        let customer_id: Option<(String,)> = sqlx::query_as(
-            "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| BillingError::Database(e.to_string()))?;
+        let customer_id: Option<(String,)> =
+            sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| BillingError::Database(e.to_string()))?;
 
         let customer_id = customer_id
             .and_then(|(id,)| if id.is_empty() { None } else { Some(id) })
@@ -188,7 +187,7 @@ impl TaxService {
         let record: Option<(String, Option<String>)> = sqlx::query_as(
             "SELECT stripe_customer_id, stripe_tax_id FROM organization_tax_ids t
              JOIN organizations o ON t.org_id = o.id
-             WHERE t.id = $1 AND t.org_id = $2"
+             WHERE t.id = $1 AND t.org_id = $2",
         )
         .bind(tax_id)
         .bind(org_id)
@@ -196,21 +195,20 @@ impl TaxService {
         .await
         .map_err(|e| BillingError::Database(e.to_string()))?;
 
-        let (customer_id, stripe_tax_id) = record
-            .ok_or_else(|| BillingError::NotFound("Tax ID not found".to_string()))?;
+        let (customer_id, stripe_tax_id) =
+            record.ok_or_else(|| BillingError::NotFound("Tax ID not found".to_string()))?;
 
         // Delete from Stripe if exists
         if let Some(stripe_id) = stripe_tax_id {
             // Note: In async-stripe 0.39, TaxId::delete takes (client, &TaxIdId)
             // without customer_id. Log for manual cleanup if needed.
             if !stripe_id.starts_with("txi_local_") {
-                let tax_id_parsed = stripe_id.parse::<stripe::TaxIdId>()
+                let tax_id_parsed = stripe_id
+                    .parse::<stripe::TaxIdId>()
                     .map_err(|e| BillingError::StripeApi(format!("Invalid tax ID: {}", e)))?;
 
-                let _ = stripe::TaxId::delete(
-                    self.stripe.inner(),
-                    &tax_id_parsed
-                ).await; // Ignore errors - may already be deleted
+                let _ = stripe::TaxId::delete(self.stripe.inner(), &tax_id_parsed).await;
+                // Ignore errors - may already be deleted
             }
         }
 
@@ -262,7 +260,8 @@ impl TaxService {
         .await
         .map_err(|e| BillingError::Database(e.to_string()))?;
 
-        let (tax_exempt, billing_country, billing_postal_code) = org_info.unwrap_or((false, None, None));
+        let (tax_exempt, billing_country, billing_postal_code) =
+            org_info.unwrap_or((false, None, None));
 
         Ok(TaxConfig {
             org_id,
@@ -276,17 +275,17 @@ impl TaxService {
     /// Set tax exempt status for an organization
     pub async fn set_tax_exempt(&self, org_id: Uuid, exempt: bool) -> BillingResult<()> {
         // Update Stripe customer
-        let customer_id: Option<(String,)> = sqlx::query_as(
-            "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| BillingError::Database(e.to_string()))?;
+        let customer_id: Option<(String,)> =
+            sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| BillingError::Database(e.to_string()))?;
 
         if let Some((customer_id,)) = customer_id {
             if !customer_id.is_empty() {
-                let customer_id_parsed = customer_id.parse::<stripe::CustomerId>()
+                let customer_id_parsed = customer_id
+                    .parse::<stripe::CustomerId>()
                     .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
                 let mut update = stripe::UpdateCustomer::new();
@@ -296,8 +295,7 @@ impl TaxService {
                     stripe::CustomerTaxExemptFilter::None
                 });
 
-                stripe::Customer::update(self.stripe.inner(), &customer_id_parsed, update)
-                    .await?;
+                stripe::Customer::update(self.stripe.inner(), &customer_id_parsed, update).await?;
             }
         }
 
@@ -328,17 +326,17 @@ impl TaxService {
         state: Option<&str>,
     ) -> BillingResult<()> {
         // Update Stripe customer
-        let customer_id: Option<(String,)> = sqlx::query_as(
-            "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| BillingError::Database(e.to_string()))?;
+        let customer_id: Option<(String,)> =
+            sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| BillingError::Database(e.to_string()))?;
 
         if let Some((customer_id,)) = customer_id {
             if !customer_id.is_empty() {
-                let customer_id_parsed = customer_id.parse::<stripe::CustomerId>()
+                let customer_id_parsed = customer_id
+                    .parse::<stripe::CustomerId>()
                     .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
                 let mut update = stripe::UpdateCustomer::new();
@@ -355,8 +353,7 @@ impl TaxService {
                 }
                 update.address = Some(address);
 
-                stripe::Customer::update(self.stripe.inner(), &customer_id_parsed, update)
-                    .await?;
+                stripe::Customer::update(self.stripe.inner(), &customer_id_parsed, update).await?;
             }
         }
 
@@ -407,7 +404,7 @@ impl TaxService {
               AND created_at <= $3
               AND event_type IN ('INVOICE_PAID', 'OVERAGE_CHARGED', 'INSTANT_CHARGE')
               AND event_data->>'tax_amount_cents' IS NOT NULL
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(start_date)
@@ -416,7 +413,8 @@ impl TaxService {
         .await
         .unwrap_or_default();
 
-        let mut breakdown_map: std::collections::HashMap<String, TaxBreakdown> = std::collections::HashMap::new();
+        let mut breakdown_map: std::collections::HashMap<String, TaxBreakdown> =
+            std::collections::HashMap::new();
         let mut total_taxable = 0i64;
         let mut total_tax = 0i64;
 
@@ -424,12 +422,14 @@ impl TaxService {
             total_taxable += taxable;
             total_tax += tax;
 
-            let entry = breakdown_map.entry(jurisdiction.clone()).or_insert(TaxBreakdown {
-                jurisdiction,
-                tax_rate_percent: rate,
-                taxable_amount_cents: 0,
-                tax_amount_cents: 0,
-            });
+            let entry = breakdown_map
+                .entry(jurisdiction.clone())
+                .or_insert(TaxBreakdown {
+                    jurisdiction,
+                    tax_rate_percent: rate,
+                    taxable_amount_cents: 0,
+                    tax_amount_cents: 0,
+                });
             entry.taxable_amount_cents += taxable;
             entry.tax_amount_cents += tax;
         }
@@ -449,7 +449,7 @@ impl TaxService {
         let record: Option<(String, Option<String>)> = sqlx::query_as(
             "SELECT stripe_customer_id, stripe_tax_id FROM organization_tax_ids t
              JOIN organizations o ON t.org_id = o.id
-             WHERE t.id = $1 AND t.org_id = $2"
+             WHERE t.id = $1 AND t.org_id = $2",
         )
         .bind(tax_id)
         .bind(org_id)
@@ -457,8 +457,8 @@ impl TaxService {
         .await
         .map_err(|e| BillingError::Database(e.to_string()))?;
 
-        let (customer_id, stripe_tax_id) = record
-            .ok_or_else(|| BillingError::NotFound("Tax ID not found".to_string()))?;
+        let (customer_id, stripe_tax_id) =
+            record.ok_or_else(|| BillingError::NotFound("Tax ID not found".to_string()))?;
 
         let stripe_tax_id = stripe_tax_id
             .ok_or_else(|| BillingError::InvalidInput("Tax ID not linked to Stripe".to_string()))?;
@@ -469,16 +469,14 @@ impl TaxService {
         }
 
         // Retrieve tax ID from Stripe to get latest verification status
-        let tax_id_parsed = stripe_tax_id.parse::<stripe::TaxIdId>()
+        let tax_id_parsed = stripe_tax_id
+            .parse::<stripe::TaxIdId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid tax ID: {}", e)))?;
 
-        let tax_id_obj = stripe::TaxId::retrieve(
-            self.stripe.inner(),
-            &tax_id_parsed,
-            &[]
-        ).await?;
+        let tax_id_obj = stripe::TaxId::retrieve(self.stripe.inner(), &tax_id_parsed, &[]).await?;
 
-        let status = tax_id_obj.verification
+        let status = tax_id_obj
+            .verification
             .map(|v| format!("{:?}", v.status))
             .unwrap_or_else(|| "unknown".to_string());
 

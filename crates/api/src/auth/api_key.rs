@@ -149,11 +149,15 @@ mod tests {
         let manager = ApiKeyManager::new("test-secret-key-32-chars-minimum!");
 
         // Invalid prefix
-        assert!(!manager.validate_key("invalid_key").expect("Validation failed"));
+        assert!(!manager
+            .validate_key("invalid_key")
+            .expect("Validation failed"));
 
         // Modified key
         let (key, _, _) = manager.generate_key().expect("Failed to generate key");
         let modified_key = format!("{}x", &key[..key.len() - 1]);
-        assert!(!manager.validate_key(&modified_key).expect("Validation failed"));
+        assert!(!manager
+            .validate_key(&modified_key)
+            .expect("Validation failed"));
     }
 }

@@ -3,17 +3,16 @@
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use stripe::{
-    CheckoutSession, CheckoutSessionMode, CreateCheckoutSession,
-    CreateCheckoutSessionDiscounts, CreateCheckoutSessionLineItems,
-    CreateCheckoutSessionLineItemsPriceData, CreateCheckoutSessionLineItemsPriceDataProductData,
-    CustomerId,
+    CheckoutSession, CheckoutSessionMode, CreateCheckoutSession, CreateCheckoutSessionDiscounts,
+    CreateCheckoutSessionLineItems, CreateCheckoutSessionLineItemsPriceData,
+    CreateCheckoutSessionLineItemsPriceDataProductData, CustomerId,
 };
 use uuid::Uuid;
 
 use crate::client::StripeClient;
+use crate::error::{BillingError, BillingResult};
 use crate::metered::MeteredBillingService;
 use crate::subscriptions::SubscriptionService;
-use crate::error::{BillingError, BillingResult};
 
 /// Billing interval for subscriptions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -48,7 +47,11 @@ impl CheckoutService {
 
     /// Verify that a Stripe customer ID belongs to the given organization (defense-in-depth)
     /// This protects against mismatched org_id/customer_id pairs being passed to checkout functions
-    async fn verify_customer_ownership(&self, org_id: Uuid, customer_id: &str) -> BillingResult<()> {
+    async fn verify_customer_ownership(
+        &self,
+        org_id: Uuid,
+        customer_id: &str,
+    ) -> BillingResult<()> {
         let verified: Option<(String,)> = sqlx::query_as(
             "SELECT stripe_customer_id FROM organizations WHERE id = $1 AND stripe_customer_id = $2"
         )
@@ -64,7 +67,7 @@ impl CheckoutService {
                 "Customer ID ownership verification failed"
             );
             return Err(BillingError::Unauthorized(
-                "Customer ID does not belong to this organization".to_string()
+                "Customer ID does not belong to this organization".to_string(),
             ));
         }
         Ok(())
@@ -78,7 +81,13 @@ impl CheckoutService {
         tier: &str,
     ) -> BillingResult<CheckoutSession> {
         // Default to monthly billing
-        self.create_subscription_checkout_with_interval(org_id, customer_id, tier, BillingInterval::Monthly).await
+        self.create_subscription_checkout_with_interval(
+            org_id,
+            customer_id,
+            tier,
+            BillingInterval::Monthly,
+        )
+        .await
     }
 
     /// Create a checkout session for a new subscription with specified billing interval
@@ -94,19 +103,22 @@ impl CheckoutService {
 
         // Get the appropriate price ID based on billing interval
         let price_id = match billing_interval {
-            BillingInterval::Monthly => {
-                self.stripe.config().price_id_for_tier(tier)
-                    .ok_or_else(|| BillingError::InvalidTier(tier.to_string()))?
-            }
-            BillingInterval::Annual => {
-                self.stripe.config().annual_price_id_for_tier(tier)
-                    .ok_or_else(|| BillingError::InvalidTier(
-                        format!("{} (annual pricing not configured)", tier)
-                    ))?
-            }
+            BillingInterval::Monthly => self
+                .stripe
+                .config()
+                .price_id_for_tier(tier)
+                .ok_or_else(|| BillingError::InvalidTier(tier.to_string()))?,
+            BillingInterval::Annual => self
+                .stripe
+                .config()
+                .annual_price_id_for_tier(tier)
+                .ok_or_else(|| {
+                    BillingError::InvalidTier(format!("{} (annual pricing not configured)", tier))
+                })?,
         };
 
-        let customer_id = customer_id.parse::<CustomerId>()
+        let customer_id = customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
         let base_url = &self.stripe.config().app_base_url;
@@ -119,10 +131,13 @@ impl CheckoutService {
         let mut metadata = std::collections::HashMap::new();
         metadata.insert("org_id".to_string(), org_id.to_string());
         metadata.insert("tier".to_string(), tier.to_string());
-        metadata.insert("billing_interval".to_string(), match billing_interval {
-            BillingInterval::Monthly => "monthly".to_string(),
-            BillingInterval::Annual => "annual".to_string(),
-        });
+        metadata.insert(
+            "billing_interval".to_string(),
+            match billing_interval {
+                BillingInterval::Monthly => "monthly".to_string(),
+                BillingInterval::Annual => "annual".to_string(),
+            },
+        );
 
         // Build line items - start with the base subscription price
         let mut line_items = vec![CreateCheckoutSessionLineItems {
@@ -189,19 +204,22 @@ impl CheckoutService {
         self.verify_customer_ownership(org_id, customer_id).await?;
 
         let price_id = match billing_interval {
-            BillingInterval::Monthly => {
-                self.stripe.config().price_id_for_tier(tier)
-                    .ok_or_else(|| BillingError::InvalidTier(tier.to_string()))?
-            }
-            BillingInterval::Annual => {
-                self.stripe.config().annual_price_id_for_tier(tier)
-                    .ok_or_else(|| BillingError::InvalidTier(
-                        format!("{} (annual pricing not configured)", tier)
-                    ))?
-            }
+            BillingInterval::Monthly => self
+                .stripe
+                .config()
+                .price_id_for_tier(tier)
+                .ok_or_else(|| BillingError::InvalidTier(tier.to_string()))?,
+            BillingInterval::Annual => self
+                .stripe
+                .config()
+                .annual_price_id_for_tier(tier)
+                .ok_or_else(|| {
+                    BillingError::InvalidTier(format!("{} (annual pricing not configured)", tier))
+                })?,
         };
 
-        let customer_id = customer_id.parse::<CustomerId>()
+        let customer_id = customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
         let base_url = &self.stripe.config().app_base_url;
@@ -214,10 +232,13 @@ impl CheckoutService {
         let mut metadata = std::collections::HashMap::new();
         metadata.insert("org_id".to_string(), org_id.to_string());
         metadata.insert("tier".to_string(), tier.to_string());
-        metadata.insert("billing_interval".to_string(), match billing_interval {
-            BillingInterval::Monthly => "monthly".to_string(),
-            BillingInterval::Annual => "annual".to_string(),
-        });
+        metadata.insert(
+            "billing_interval".to_string(),
+            match billing_interval {
+                BillingInterval::Monthly => "monthly".to_string(),
+                BillingInterval::Annual => "annual".to_string(),
+            },
+        );
         metadata.insert("reactivation_coupon".to_string(), coupon_id.to_string());
 
         // Build line items
@@ -279,7 +300,13 @@ impl CheckoutService {
         customer_id: &str,
         new_tier: &str,
     ) -> BillingResult<CheckoutSession> {
-        self.create_upgrade_checkout_with_interval(org_id, customer_id, new_tier, BillingInterval::Monthly).await
+        self.create_upgrade_checkout_with_interval(
+            org_id,
+            customer_id,
+            new_tier,
+            BillingInterval::Monthly,
+        )
+        .await
     }
 
     /// Create a checkout session for upgrading with specific billing interval
@@ -295,7 +322,8 @@ impl CheckoutService {
         // SOC 2 CC6.1: Verify customer ID belongs to this organization (defense-in-depth)
         self.verify_customer_ownership(org_id, customer_id).await?;
 
-        let customer_id_parsed = customer_id.parse::<CustomerId>()
+        let customer_id_parsed = customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
         // Get pending overages
@@ -303,7 +331,9 @@ impl CheckoutService {
 
         // Calculate proration using subscription service
         let sub_service = SubscriptionService::new(self.stripe.clone(), self.pool.clone());
-        let proration_preview = sub_service.preview_upgrade_proration(org_id, new_tier).await?;
+        let proration_preview = sub_service
+            .preview_upgrade_proration(org_id, new_tier)
+            .await?;
 
         let proration_cents = proration_preview.proration_amount_cents;
 
@@ -340,7 +370,7 @@ impl CheckoutService {
         if total_amount <= 0 {
             // No payment needed - upgrade directly without checkout
             return Err(BillingError::Internal(
-                "No payment required for upgrade - please contact support".to_string()
+                "No payment required for upgrade - please contact support".to_string(),
             ));
         }
 
@@ -361,10 +391,13 @@ impl CheckoutService {
         metadata.insert("org_id".to_string(), org_id.to_string());
         metadata.insert("checkout_type".to_string(), "upgrade_payment".to_string());
         metadata.insert("new_tier".to_string(), new_tier.to_string());
-        metadata.insert("billing_interval".to_string(), match billing_interval {
-            BillingInterval::Monthly => "monthly".to_string(),
-            BillingInterval::Annual => "annual".to_string(),
-        });
+        metadata.insert(
+            "billing_interval".to_string(),
+            match billing_interval {
+                BillingInterval::Monthly => "monthly".to_string(),
+                BillingInterval::Annual => "annual".to_string(),
+            },
+        );
         metadata.insert("proration_cents".to_string(), proration_cents.to_string());
         metadata.insert("overage_cents".to_string(), pending_overages.to_string());
 
@@ -386,8 +419,7 @@ impl CheckoutService {
         } else {
             format!(
                 "Prorated upgrade to {} Plan ({} days remaining)",
-                tier_display,
-                proration_preview.days_remaining
+                tier_display, proration_preview.days_remaining
             )
         };
 
@@ -438,7 +470,7 @@ impl CheckoutService {
             SELECT SUM(total_charge_cents)
             FROM overage_charges
             WHERE org_id = $1 AND status IN ('pending', 'awaiting_payment')
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -455,7 +487,7 @@ impl CheckoutService {
             SET status = 'pending_upgrade_payment',
                 early_payment_invoice_id = NULL
             WHERE org_id = $1 AND status IN ('pending', 'awaiting_payment')
-            "#
+            "#,
         )
         .bind(org_id)
         .execute(&self.pool)
@@ -466,7 +498,8 @@ impl CheckoutService {
 
     /// Retrieve a checkout session by ID
     pub async fn get_session(&self, session_id: &str) -> BillingResult<CheckoutSession> {
-        let session_id = session_id.parse::<stripe::CheckoutSessionId>()
+        let session_id = session_id
+            .parse::<stripe::CheckoutSessionId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid session ID: {}", e)))?;
 
         let session = CheckoutSession::retrieve(self.stripe.inner(), &session_id, &[]).await?;
@@ -485,7 +518,8 @@ impl CheckoutService {
         // SOC 2 CC6.1: Verify customer ID belongs to this organization (defense-in-depth)
         self.verify_customer_ownership(org_id, customer_id).await?;
 
-        let customer_id = customer_id.parse::<CustomerId>()
+        let customer_id = customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
         let base_url = &self.stripe.config().app_base_url;

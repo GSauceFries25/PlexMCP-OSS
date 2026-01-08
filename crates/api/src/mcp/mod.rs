@@ -27,7 +27,9 @@ pub mod router;
 pub mod streaming;
 pub mod types;
 
-pub use audit::{log_mcp_request, update_mcp_request_metrics, update_mcp_request_tokens, McpRequestLog};
+pub use audit::{
+    log_mcp_request, update_mcp_request_metrics, update_mcp_request_tokens, McpRequestLog,
+};
 pub use client::McpClient;
 pub use handlers::McpProxyHandler;
 pub use router::McpRouter;

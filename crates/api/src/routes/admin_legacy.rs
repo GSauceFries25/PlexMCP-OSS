@@ -245,7 +245,6 @@ pub struct UpdateUserRequest {
     pub refund_type: Option<String>,
 }
 
-
 #[derive(Debug, Serialize)]
 pub struct PlatformStatsResponse {
     pub total_users: i64,
@@ -407,7 +406,7 @@ async fn require_platform_admin(
     let user_id = auth_user.user_id.ok_or(ApiError::Unauthorized)?;
 
     let row: Option<PlatformRoleRow> = sqlx::query_as(
-        "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1"
+        "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(&state.pool)
@@ -467,7 +466,7 @@ async fn log_admin_action(
             event_type, severity, ip_address, user_agent, session_id
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        "#  // Removed ::inet cast - now using TEXT type
+        "#, // Removed ::inet cast - now using TEXT type
     )
     .bind(admin_user_id)
     .bind(action)
@@ -498,8 +497,15 @@ async fn log_admin_action(
 fn sanitize_pii(mut details: serde_json::Value) -> serde_json::Value {
     if let Some(obj) = details.as_object_mut() {
         let sensitive_keys = [
-            "password", "password_hash", "token", "api_key", "secret",
-            "private_key", "credit_card", "ssn", "bearer_token",
+            "password",
+            "password_hash",
+            "token",
+            "api_key",
+            "secret",
+            "private_key",
+            "credit_card",
+            "ssn",
+            "bearer_token",
         ];
 
         for key in &sensitive_keys {
@@ -563,7 +569,7 @@ pub async fn list_users(
         JOIN organizations o ON o.id = u.org_id
         LEFT JOIN subscriptions s ON s.org_id = u.org_id
         WHERE 1=1
-        "#
+        "#,
     );
 
     if query.search.is_some() {
@@ -690,7 +696,7 @@ pub async fn get_user(
         JOIN organizations o ON o.id = u.org_id
         LEFT JOIN subscriptions s ON s.org_id = u.org_id
         WHERE u.id = $1
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_optional(&state.pool)
@@ -707,7 +713,7 @@ pub async fn get_user(
         SELECT is_enabled, enabled_at, last_used_at
         FROM user_2fa
         WHERE user_id = $1
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_optional(&state.pool)
@@ -719,7 +725,7 @@ pub async fn get_user(
         SELECT COALESCE(COUNT(*), 0) as count
         FROM user_2fa_backup_codes
         WHERE user_id = $1 AND used_at IS NULL
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_one(&state.pool)
@@ -734,7 +740,7 @@ pub async fn get_user(
         WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
         ORDER BY created_at DESC
         LIMIT 20
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&state.pool)
@@ -754,7 +760,7 @@ pub async fn get_user(
         WHERE user_id = $1 AND action LIKE 'login%'
         ORDER BY created_at DESC
         LIMIT 50
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&state.pool)
@@ -768,7 +774,7 @@ pub async fn get_user(
         FROM user_identities
         WHERE user_id = $1
         ORDER BY linked_at DESC
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&state.pool)
@@ -782,7 +788,7 @@ pub async fn get_user(
         FROM user_trusted_devices
         WHERE user_id = $1 AND (expires_at IS NULL OR expires_at > NOW())
         ORDER BY last_used_at DESC NULLS LAST
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&state.pool)
@@ -881,7 +887,9 @@ pub async fn get_user(
     // Check if organization has a payment method on file in Stripe (only when billing is enabled)
     #[cfg(feature = "billing")]
     let has_payment_method: bool = if let Some(billing) = &state.billing {
-        billing.customer.has_payment_method(user.org_id)
+        billing
+            .customer
+            .has_payment_method(user.org_id)
             .await
             .unwrap_or(false)
     } else {
@@ -972,7 +980,7 @@ pub async fn update_user(
         JOIN organizations o ON o.id = u.org_id
         LEFT JOIN subscriptions s ON s.org_id = u.org_id
         WHERE u.id = $1
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_optional(&state.pool)
@@ -982,7 +990,7 @@ pub async fn update_user(
     // Prevent modifying superadmins unless you're a superadmin
     if current_user.platform_role == "superadmin" {
         let admin_role: Option<PlatformRoleRow> = sqlx::query_as(
-            "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1"
+            "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1",
         )
         .bind(admin_user_id)
         .fetch_optional(&state.pool)
@@ -1008,7 +1016,7 @@ pub async fn update_user(
         if let Some(ref interval) = req.billing_interval {
             if !["monthly", "annual"].contains(&interval.as_str()) {
                 return Err(ApiError::Validation(
-                    "billing_interval must be 'monthly' or 'annual'".into()
+                    "billing_interval must be 'monthly' or 'annual'".into(),
                 ));
             }
         }
@@ -1017,12 +1025,12 @@ pub async fn update_user(
         if let Some(ref method) = req.payment_method {
             if !["immediate", "invoice", "trial"].contains(&method.as_str()) {
                 return Err(ApiError::Validation(
-                    "payment_method must be 'immediate', 'invoice', or 'trial'".into()
+                    "payment_method must be 'immediate', 'invoice', or 'trial'".into(),
                 ));
             }
             if method == "trial" && req.trial_days.is_none() {
                 return Err(ApiError::Validation(
-                    "trial_days required when payment_method is 'trial'".into()
+                    "trial_days required when payment_method is 'trial'".into(),
                 ));
             }
         }
@@ -1030,19 +1038,19 @@ pub async fn update_user(
         // Validate Enterprise pricing
         if tier == "enterprise" && req.custom_price_cents.is_none() {
             return Err(ApiError::Validation(
-                "custom_price_cents required for Enterprise tier".into()
+                "custom_price_cents required for Enterprise tier".into(),
             ));
         }
 
         if let Some(price) = req.custom_price_cents {
             if price <= 0 {
                 return Err(ApiError::Validation(
-                    "custom_price_cents must be positive".into()
+                    "custom_price_cents must be positive".into(),
                 ));
             }
             if tier != "enterprise" {
                 return Err(ApiError::Validation(
-                    "custom_price_cents only allowed for Enterprise tier".into()
+                    "custom_price_cents only allowed for Enterprise tier".into(),
                 ));
             }
         }
@@ -1051,12 +1059,15 @@ pub async fn update_user(
         let start_date = if let Some(ref date_str) = req.subscription_start_date {
             let parsed = time::OffsetDateTime::parse(
                 date_str,
-                &time::format_description::well_known::Rfc3339
-            ).map_err(|_| ApiError::Validation("Invalid date format (use ISO 8601/RFC 3339)".into()))?;
+                &time::format_description::well_known::Rfc3339,
+            )
+            .map_err(|_| {
+                ApiError::Validation("Invalid date format (use ISO 8601/RFC 3339)".into())
+            })?;
 
             if parsed <= time::OffsetDateTime::now_utc() {
                 return Err(ApiError::Validation(
-                    "subscription_start_date must be in the future".into()
+                    "subscription_start_date must be in the future".into(),
                 ));
             }
             Some(parsed)
@@ -1067,7 +1078,9 @@ pub async fn update_user(
         // Execute tier change with Stripe sync (when billing is enabled)
         #[cfg(feature = "billing")]
         let result = {
-            let billing = state.billing.as_ref()
+            let billing = state
+                .billing
+                .as_ref()
                 .ok_or_else(|| ApiError::Database("Billing not configured".into()))?;
 
             billing.subscriptions.admin_change_tier(
@@ -1101,14 +1114,12 @@ pub async fn update_user(
         #[cfg(not(feature = "billing"))]
         let result = {
             // Update tier directly in database (using non-macro query to avoid sqlx offline cache requirement)
-            sqlx::query(
-                "UPDATE organizations SET subscription_tier = $1 WHERE id = $2"
-            )
-            .bind(&tier)
-            .bind(current_user.org_id)
-            .execute(&state.pool)
-            .await
-            .map_err(|e| ApiError::Database(e.to_string()))?;
+            sqlx::query("UPDATE organizations SET subscription_tier = $1 WHERE id = $2")
+                .bind(&tier)
+                .bind(current_user.org_id)
+                .execute(&state.pool)
+                .await
+                .map_err(|e| ApiError::Database(e.to_string()))?;
 
             // Return a minimal result struct for audit logging
             AdminTierChangeResult {
@@ -1146,7 +1157,8 @@ pub async fn update_user(
             ip_address.clone(),
             user_agent.clone(),
             session_id,
-        ).await?;
+        )
+        .await?;
     }
 
     // Update platform role if provided
@@ -1162,7 +1174,7 @@ pub async fn update_user(
         // Only superadmins can grant superadmin
         if role == "superadmin" {
             let admin_role: Option<PlatformRoleRow> = sqlx::query_as(
-                "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1"
+                "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1",
             )
             .bind(admin_user_id)
             .fetch_optional(&state.pool)
@@ -1173,11 +1185,13 @@ pub async fn update_user(
             }
         }
 
-        sqlx::query("UPDATE users SET platform_role = $1::platform_role, updated_at = NOW() WHERE id = $2")
-            .bind(role)
-            .bind(user_id)
-            .execute(&state.pool)
-            .await?;
+        sqlx::query(
+            "UPDATE users SET platform_role = $1::platform_role, updated_at = NOW() WHERE id = $2",
+        )
+        .bind(role)
+        .bind(user_id)
+        .execute(&state.pool)
+        .await?;
 
         log_admin_action(
             &state.pool,
@@ -1194,7 +1208,8 @@ pub async fn update_user(
             ip_address.clone(),
             user_agent.clone(),
             session_id,
-        ).await?;
+        )
+        .await?;
     }
 
     // Fetch and return updated user
@@ -1224,7 +1239,7 @@ pub async fn get_stats(
         SELECT COALESCE(SUM(request_count), 0)
         FROM usage_records
         WHERE period_start >= date_trunc('day', NOW())
-        "#
+        "#,
     )
     .fetch_one(&state.pool)
     .await
@@ -1236,7 +1251,7 @@ pub async fn get_stats(
         SELECT COALESCE(SUM(request_count), 0)
         FROM usage_records
         WHERE period_start >= date_trunc('month', NOW())
-        "#
+        "#,
     )
     .fetch_one(&state.pool)
     .await
@@ -1264,7 +1279,7 @@ pub async fn get_stats(
         FROM users u
         JOIN organizations o ON o.id = u.org_id
         GROUP BY o.subscription_tier
-        "#
+        "#,
     )
     .fetch_all(&state.pool)
     .await?;
@@ -1280,7 +1295,7 @@ pub async fn get_stats(
         SELECT platform_role::text as role, COUNT(*) as count
         FROM users
         GROUP BY platform_role
-        "#
+        "#,
     )
     .fetch_all(&state.pool)
     .await?;
@@ -1316,7 +1331,7 @@ pub async fn list_organizations(
             o.created_at
         FROM organizations o
         ORDER BY o.created_at DESC
-        "#
+        "#,
     )
     .fetch_all(&state.pool)
     .await?;
@@ -1354,7 +1369,7 @@ async fn get_org_usage(pool: &sqlx::PgPool, org_id: Uuid) -> Result<i64, sqlx::E
         WHERE org_id = $1
         AND period_start >= date_trunc('month', NOW())
         AND period_end <= NOW() + interval '1 day'
-        "#
+        "#,
     )
     .bind(org_id)
     .fetch_one(pool)
@@ -1362,7 +1377,6 @@ async fn get_org_usage(pool: &sqlx::PgPool, org_id: Uuid) -> Result<i64, sqlx::E
 
     Ok(result.0)
 }
-
 
 // =============================================================================
 // Admin User Action Endpoints
@@ -1389,12 +1403,11 @@ pub async fn revoke_user_sessions(
     let (ip_address, user_agent, session_id) = extract_audit_context(&headers, &auth_user);
 
     // Verify user exists
-    let user_exists: Option<(bool,)> = sqlx::query_as(
-        "SELECT TRUE FROM public.users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let user_exists: Option<(bool,)> =
+        sqlx::query_as("SELECT TRUE FROM public.users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if user_exists.is_none() {
         return Err(ApiError::NotFound);
@@ -1406,7 +1419,7 @@ pub async fn revoke_user_sessions(
         UPDATE sessions
         SET revoked_at = NOW()
         WHERE user_id = $1 AND revoked_at IS NULL
-        "#
+        "#,
     )
     .bind(user_id)
     .execute(&state.pool)
@@ -1428,7 +1441,8 @@ pub async fn revoke_user_sessions(
         ip_address,
         user_agent,
         session_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(RevokeSessionsResponse {
         user_id,
@@ -1458,12 +1472,11 @@ pub async fn force_password_reset(
     let (ip_address, user_agent, session_id) = extract_audit_context(&headers, &auth_user);
 
     // Verify user exists
-    let user_exists: Option<(bool,)> = sqlx::query_as(
-        "SELECT TRUE FROM public.users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let user_exists: Option<(bool,)> =
+        sqlx::query_as("SELECT TRUE FROM public.users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if user_exists.is_none() {
         return Err(ApiError::NotFound);
@@ -1475,7 +1488,7 @@ pub async fn force_password_reset(
         UPDATE users
         SET password_hash = NULL, password_changed_at = NULL, updated_at = NOW()
         WHERE id = $1
-        "#
+        "#,
     )
     .bind(user_id)
     .execute(&state.pool)
@@ -1487,7 +1500,7 @@ pub async fn force_password_reset(
         UPDATE sessions
         SET revoked_at = NOW()
         WHERE user_id = $1 AND revoked_at IS NULL
-        "#
+        "#,
     )
     .bind(user_id)
     .execute(&state.pool)
@@ -1509,7 +1522,8 @@ pub async fn force_password_reset(
         ip_address,
         user_agent,
         session_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(ForcePasswordResetResponse {
         user_id,
@@ -1540,12 +1554,11 @@ pub async fn disable_user_2fa(
     let (ip_address, user_agent, session_id) = extract_audit_context(&headers, &auth_user);
 
     // Verify user exists
-    let user_exists: Option<(bool,)> = sqlx::query_as(
-        "SELECT TRUE FROM public.users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let user_exists: Option<(bool,)> =
+        sqlx::query_as("SELECT TRUE FROM public.users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if user_exists.is_none() {
         return Err(ApiError::NotFound);
@@ -1557,29 +1570,25 @@ pub async fn disable_user_2fa(
         UPDATE user_2fa
         SET is_enabled = FALSE, secret_key = NULL, updated_at = NOW()
         WHERE user_id = $1
-        "#
+        "#,
     )
     .bind(user_id)
     .execute(&state.pool)
     .await?;
 
     // Delete backup codes
-    let backup_result = sqlx::query(
-        "DELETE FROM user_2fa_backup_codes WHERE user_id = $1"
-    )
-    .bind(user_id)
-    .execute(&state.pool)
-    .await?;
+    let backup_result = sqlx::query("DELETE FROM user_2fa_backup_codes WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&state.pool)
+        .await?;
 
     let backup_codes_deleted = backup_result.rows_affected() as i64;
 
     // Delete trusted devices
-    let devices_result = sqlx::query(
-        "DELETE FROM user_trusted_devices WHERE user_id = $1"
-    )
-    .bind(user_id)
-    .execute(&state.pool)
-    .await?;
+    let devices_result = sqlx::query("DELETE FROM user_trusted_devices WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&state.pool)
+        .await?;
 
     let trusted_devices_deleted = devices_result.rows_affected() as i64;
 
@@ -1598,7 +1607,8 @@ pub async fn disable_user_2fa(
         ip_address,
         user_agent,
         session_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(Disable2FAResponse {
         user_id,
@@ -1638,7 +1648,7 @@ pub async fn suspend_user(
 
     // Verify user exists and get their role
     let target_role: Option<PlatformRoleRow> = sqlx::query_as(
-        "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1"
+        "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(&state.pool)
@@ -1651,7 +1661,7 @@ pub async fn suspend_user(
     // Prevent suspending superadmins unless you're a superadmin
     if target_role.map(|r| r.platform_role).unwrap_or_default() == "superadmin" {
         let admin_role: Option<PlatformRoleRow> = sqlx::query_as(
-            "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1"
+            "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1",
         )
         .bind(admin_user_id)
         .fetch_optional(&state.pool)
@@ -1664,7 +1674,9 @@ pub async fn suspend_user(
 
     // Prevent self-suspension
     if user_id == admin_user_id {
-        return Err(ApiError::Validation("Cannot suspend your own account".to_string()));
+        return Err(ApiError::Validation(
+            "Cannot suspend your own account".to_string(),
+        ));
     }
 
     // Suspend the user
@@ -1673,7 +1685,7 @@ pub async fn suspend_user(
         UPDATE users
         SET is_suspended = TRUE, suspended_at = NOW(), suspended_reason = $2, updated_at = NOW()
         WHERE id = $1
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(&req.reason)
@@ -1686,7 +1698,7 @@ pub async fn suspend_user(
         UPDATE sessions
         SET revoked_at = NOW()
         WHERE user_id = $1 AND revoked_at IS NULL
-        "#
+        "#,
     )
     .bind(user_id)
     .execute(&state.pool)
@@ -1709,7 +1721,8 @@ pub async fn suspend_user(
         ip_address,
         user_agent,
         session_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(SuspendUserResponse {
         user_id,
@@ -1732,12 +1745,11 @@ pub async fn unsuspend_user(
     let (ip_address, user_agent, session_id) = extract_audit_context(&headers, &auth_user);
 
     // Verify user exists
-    let user_exists: Option<(bool,)> = sqlx::query_as(
-        "SELECT TRUE FROM public.users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let user_exists: Option<(bool,)> =
+        sqlx::query_as("SELECT TRUE FROM public.users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if user_exists.is_none() {
         return Err(ApiError::NotFound);
@@ -1749,7 +1761,7 @@ pub async fn unsuspend_user(
         UPDATE users
         SET is_suspended = FALSE, suspended_at = NULL, suspended_reason = NULL, updated_at = NOW()
         WHERE id = $1
-        "#
+        "#,
     )
     .bind(user_id)
     .execute(&state.pool)
@@ -1767,7 +1779,8 @@ pub async fn unsuspend_user(
         ip_address,
         user_agent,
         session_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(SuspendUserResponse {
         user_id,
@@ -1798,7 +1811,7 @@ pub async fn delete_user(
 
     // Verify user exists and get their role
     let target_role: Option<PlatformRoleRow> = sqlx::query_as(
-        "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1"
+        "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(&state.pool)
@@ -1811,7 +1824,7 @@ pub async fn delete_user(
     // Prevent deleting superadmins unless you're a superadmin
     if target_role.map(|r| r.platform_role).unwrap_or_default() == "superadmin" {
         let admin_role: Option<PlatformRoleRow> = sqlx::query_as(
-            "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1"
+            "SELECT platform_role::TEXT as platform_role FROM public.users WHERE id = $1",
         )
         .bind(admin_user_id)
         .fetch_optional(&state.pool)
@@ -1824,7 +1837,9 @@ pub async fn delete_user(
 
     // Prevent self-deletion
     if user_id == admin_user_id {
-        return Err(ApiError::Validation("Cannot delete your own account".to_string()));
+        return Err(ApiError::Validation(
+            "Cannot delete your own account".to_string(),
+        ));
     }
 
     // Log before deletion
@@ -1840,7 +1855,8 @@ pub async fn delete_user(
         ip_address,
         user_agent,
         session_id,
-    ).await?;
+    )
+    .await?;
 
     // Delete user (cascades to related tables via ON DELETE CASCADE)
     sqlx::query("DELETE FROM public.users WHERE id = $1")
@@ -1874,23 +1890,20 @@ pub async fn revoke_user_api_key(
     let (ip_address, user_agent, session_id) = extract_audit_context(&headers, &auth_user);
 
     // Verify user exists and get their org_id
-    let user_org: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT org_id FROM public.users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let user_org: Option<(Uuid,)> = sqlx::query_as("SELECT org_id FROM public.users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await?;
 
     let org_id = user_org.map(|(id,)| id).ok_or(ApiError::NotFound)?;
 
     // Verify API key belongs to user's org
-    let key_exists: Option<(bool,)> = sqlx::query_as(
-        "SELECT TRUE FROM api_keys WHERE id = $1 AND org_id = $2"
-    )
-    .bind(key_id)
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let key_exists: Option<(bool,)> =
+        sqlx::query_as("SELECT TRUE FROM api_keys WHERE id = $1 AND org_id = $2")
+            .bind(key_id)
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if key_exists.is_none() {
         return Err(ApiError::NotFound);
@@ -1902,7 +1915,7 @@ pub async fn revoke_user_api_key(
         UPDATE api_keys
         SET status = 'revoked', updated_at = NOW()
         WHERE id = $1
-        "#
+        "#,
     )
     .bind(key_id)
     .execute(&state.pool)
@@ -1923,7 +1936,8 @@ pub async fn revoke_user_api_key(
         ip_address,
         user_agent,
         session_id,
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(RevokeApiKeyResponse {
         key_id,
@@ -2051,7 +2065,12 @@ pub async fn get_mcp_logs(
     let from_date = if let Some(ref from_str) = query.from {
         Some(
             OffsetDateTime::parse(from_str, &time::format_description::well_known::Rfc3339)
-                .map_err(|_| ApiError::Validation("Invalid 'from' date format. Use RFC3339 (e.g., 2024-01-01T00:00:00Z)".to_string()))?
+                .map_err(|_| {
+                    ApiError::Validation(
+                        "Invalid 'from' date format. Use RFC3339 (e.g., 2024-01-01T00:00:00Z)"
+                            .to_string(),
+                    )
+                })?,
         )
     } else {
         None
@@ -2059,8 +2078,14 @@ pub async fn get_mcp_logs(
 
     let to_date = if let Some(ref to_str) = query.to {
         Some(
-            OffsetDateTime::parse(to_str, &time::format_description::well_known::Rfc3339)
-                .map_err(|_| ApiError::Validation("Invalid 'to' date format. Use RFC3339 (e.g., 2024-01-31T23:59:59Z)".to_string()))?
+            OffsetDateTime::parse(to_str, &time::format_description::well_known::Rfc3339).map_err(
+                |_| {
+                    ApiError::Validation(
+                        "Invalid 'to' date format. Use RFC3339 (e.g., 2024-01-31T23:59:59Z)"
+                            .to_string(),
+                    )
+                },
+            )?,
         )
     } else {
         None
@@ -2144,7 +2169,10 @@ pub async fn get_mcp_logs(
     // Build final queries
     let data_sql = format!(
         "{}{} ORDER BY l.created_at DESC LIMIT ${} OFFSET ${}",
-        base_query, conditions, param_index, param_index + 1
+        base_query,
+        conditions,
+        param_index,
+        param_index + 1
     );
 
     let count_sql = format!("{}{}", count_query, conditions);
@@ -2381,7 +2409,7 @@ pub async fn toggle_org_overages(
         SELECT name, subscription_tier, COALESCE(overages_disabled, false) as overages_disabled
         FROM organizations
         WHERE id = $1
-        "#
+        "#,
     )
     .bind(org_id)
     .fetch_optional(&state.pool)
@@ -2392,7 +2420,7 @@ pub async fn toggle_org_overages(
     // Free tier always has overages disabled - can't be changed
     if org.subscription_tier == "free" && !req.disable_overages {
         return Err(ApiError::Validation(
-            "Free tier organizations cannot enable overage billing".to_string()
+            "Free tier organizations cannot enable overage billing".to_string(),
         ));
     }
 
@@ -2409,7 +2437,7 @@ pub async fn toggle_org_overages(
             overages_disabled_reason = $4,
             updated_at = NOW()
         WHERE id = $1
-        "#
+        "#,
     )
     .bind(org_id)
     .bind(new_value)
@@ -2441,7 +2469,7 @@ pub async fn toggle_org_overages(
             ip_address, user_agent, session_id, metadata, auth_method
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        "#
+        "#,
     )
     .bind(admin_user_id)
     .bind(&auth_user.email)
@@ -2503,7 +2531,7 @@ pub async fn get_org_overages(
                overages_disabled_at, overages_disabled_by, overages_disabled_reason
         FROM organizations
         WHERE id = $1
-        "#
+        "#,
     )
     .bind(org_id)
     .fetch_optional(&state.pool)
@@ -2520,8 +2548,12 @@ pub async fn get_org_overages(
         overages_disabled: effective_disabled,
         subscription_tier: org.subscription_tier,
         reason: org.overages_disabled_reason,
-        updated_at: org.overages_disabled_at
-            .map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default())
+        updated_at: org
+            .overages_disabled_at
+            .map(|t| {
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default()
+            })
             .unwrap_or_default(),
         updated_by: org.overages_disabled_by,
     }))
@@ -2740,10 +2772,13 @@ pub async fn debug_org_billing(
 
     // Get entitlement
     let entitlement_service = plexmcp_billing::EntitlementService::new(state.pool.clone());
-    let entitlement = entitlement_service.compute_entitlement(org_id).await.map_err(|e| {
-        tracing::error!(%req_id, error = %e, "Failed to compute entitlement");
-        ApiError::Internal
-    })?;
+    let entitlement = entitlement_service
+        .compute_entitlement(org_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(%req_id, error = %e, "Failed to compute entitlement");
+            ApiError::Internal
+        })?;
 
     // Get subscription info
     let subscription: Option<SubscriptionRow> = sqlx::query_as(
@@ -2813,7 +2848,8 @@ pub async fn debug_org_billing(
         level: "info".to_string(),
         message: format!(
             "Entitlement state is {} (source: {})",
-            entitlement.state, format!("{:?}", entitlement.source)
+            entitlement.state,
+            format!("{:?}", entitlement.source)
         ),
     });
 
@@ -2822,7 +2858,10 @@ pub async fn debug_org_billing(
             level: "warning".to_string(),
             message: format!(
                 "API access is blocked: {}",
-                entitlement.api_blocked_reason.as_deref().unwrap_or("Unknown reason")
+                entitlement
+                    .api_blocked_reason
+                    .as_deref()
+                    .unwrap_or("Unknown reason")
             ),
         });
     }

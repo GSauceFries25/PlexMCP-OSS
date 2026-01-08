@@ -84,7 +84,11 @@ pub struct InstantChargeService {
 
 impl InstantChargeService {
     pub fn new(stripe: StripeClient, pool: PgPool, email: BillingEmailService) -> Self {
-        Self { stripe, pool, email }
+        Self {
+            stripe,
+            pool,
+            email,
+        }
     }
 
     /// Check if instant charge is needed and process if so
@@ -162,12 +166,14 @@ impl InstantChargeService {
         // Get customer ID and process with Stripe
         let customer_id = self.get_stripe_customer_id(org_id).await?;
 
-        let result = self.process_stripe_charge(
-            charge.id,
-            &customer_id,
-            current_overage_cents,
-            overage_count,
-        ).await;
+        let result = self
+            .process_stripe_charge(
+                charge.id,
+                &customer_id,
+                current_overage_cents,
+                overage_count,
+            )
+            .await;
 
         match result {
             Ok(invoice_id) => {
@@ -179,7 +185,7 @@ impl InstantChargeService {
                         status = 'processing',
                         processed_at = NOW()
                     WHERE id = $2
-                    "#
+                    "#,
                 )
                 .bind(&invoice_id)
                 .bind(charge.id)
@@ -187,13 +193,17 @@ impl InstantChargeService {
                 .await?;
 
                 // Send notification email
-                self.send_instant_charge_notification(org_id, current_overage_cents, overage_count).await;
+                self.send_instant_charge_notification(org_id, current_overage_cents, overage_count)
+                    .await;
 
                 Ok(InstantChargeResult {
                     charged: true,
                     charge_id: Some(charge.id),
                     amount_cents: Some(charge.amount_cents),
-                    reason: format!("Instant charge created: ${:.2}", charge.amount_cents as f64 / 100.0),
+                    reason: format!(
+                        "Instant charge created: ${:.2}",
+                        charge.amount_cents as f64 / 100.0
+                    ),
                 })
             }
             Err(e) => {
@@ -205,7 +215,7 @@ impl InstantChargeService {
                         error_message = $1,
                         processed_at = NOW()
                     WHERE id = $2
-                    "#
+                    "#,
                 )
                 .bind(e.to_string())
                 .bind(charge.id)
@@ -231,7 +241,8 @@ impl InstantChargeService {
         amount_cents: i32,
         overage_count: i64,
     ) -> BillingResult<String> {
-        let customer_id = stripe_customer_id.parse::<CustomerId>()
+        let customer_id = stripe_customer_id
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
         // Create invoice item
@@ -257,14 +268,14 @@ impl InstantChargeService {
         let invoice = Invoice::create(self.stripe.inner(), invoice_params).await?;
 
         // Finalize the invoice to trigger payment attempt
-        let invoice_id_parsed = invoice.id.as_str().parse::<InvoiceId>()
+        let invoice_id_parsed = invoice
+            .id
+            .as_str()
+            .parse::<InvoiceId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid invoice ID: {}", e)))?;
 
-        let _ = Invoice::finalize(
-            self.stripe.inner(),
-            &invoice_id_parsed,
-            Default::default(),
-        ).await?;
+        let _ =
+            Invoice::finalize(self.stripe.inner(), &invoice_id_parsed, Default::default()).await?;
 
         tracing::info!(
             charge_id = %charge_id,
@@ -278,12 +289,11 @@ impl InstantChargeService {
 
     /// Get Stripe customer ID for org
     async fn get_stripe_customer_id(&self, org_id: Uuid) -> BillingResult<String> {
-        let result: Option<(Option<String>,)> = sqlx::query_as(
-            "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let result: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         result
             .and_then(|(id,)| id)
@@ -344,7 +354,7 @@ impl InstantChargeService {
             "SELECT id, org_id, amount_cents, usage_at_charge, overage_at_charge,
                     stripe_invoice_id, stripe_payment_intent_id, status, error_message,
                     created_at, processed_at, paid_at
-             FROM instant_charges WHERE org_id = $1 ORDER BY created_at DESC LIMIT $2"
+             FROM instant_charges WHERE org_id = $1 ORDER BY created_at DESC LIMIT $2",
         )
         .bind(org_id)
         .bind(limit)
@@ -355,7 +365,12 @@ impl InstantChargeService {
     }
 
     /// Send notification email for instant charge
-    async fn send_instant_charge_notification(&self, org_id: Uuid, amount_cents: i32, overage_count: i64) {
+    async fn send_instant_charge_notification(
+        &self,
+        org_id: Uuid,
+        amount_cents: i32,
+        overage_count: i64,
+    ) {
         // Get org owner email
         let owner: Option<(String, String)> = sqlx::query_as(
             r#"
@@ -364,7 +379,7 @@ impl InstantChargeService {
             JOIN organizations o ON o.id = u.org_id
             WHERE u.org_id = $1 AND u.role = 'owner'
             LIMIT 1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -373,12 +388,10 @@ impl InstantChargeService {
         .flatten();
 
         if let Some((email, org_name)) = owner {
-            let _ = self.email.send_instant_charge(
-                &email,
-                &org_name,
-                amount_cents,
-                overage_count,
-            ).await;
+            let _ = self
+                .email
+                .send_instant_charge(&email, &org_name, amount_cents, overage_count)
+                .await;
         }
     }
 }

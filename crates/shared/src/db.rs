@@ -10,8 +10,7 @@ use std::{str::FromStr, time::Duration};
 pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
     // Parse connection options and disable prepared statement cache
     // PgBouncer in transaction mode doesn't support prepared statements
-    let options = PgConnectOptions::from_str(database_url)?
-        .statement_cache_capacity(0);
+    let options = PgConnectOptions::from_str(database_url)?.statement_cache_capacity(0);
 
     // IMPORTANT: Keep max_connections LOW for Supabase Session Mode
     // With 2 API machines + 1 worker = 3 instances * 3 connections = 9 max
@@ -20,7 +19,7 @@ pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
         .max_connections(3)
         .min_connections(0)
         .acquire_timeout(Duration::from_secs(30))
-        .idle_timeout(Duration::from_secs(60))  // Release idle connections faster
+        .idle_timeout(Duration::from_secs(60)) // Release idle connections faster
         .max_lifetime(Duration::from_secs(300)) // Recycle connections more frequently
         .connect_with(options)
         .await
@@ -30,14 +29,13 @@ pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
 /// Migrations may take longer and need more time to acquire connections
 /// Uses single connection since migrations run sequentially
 pub async fn create_migration_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
-    let options = PgConnectOptions::from_str(database_url)?
-        .statement_cache_capacity(0);
+    let options = PgConnectOptions::from_str(database_url)?.statement_cache_capacity(0);
 
     PgPoolOptions::new()
         .max_connections(1) // Only need 1 for sequential migrations
         .min_connections(0)
         .acquire_timeout(Duration::from_secs(120)) // 2 minutes for migrations
-        .idle_timeout(Duration::from_secs(30))     // Release quickly after migration
+        .idle_timeout(Duration::from_secs(30)) // Release quickly after migration
         .max_lifetime(Duration::from_secs(180))
         .connect_with(options)
         .await

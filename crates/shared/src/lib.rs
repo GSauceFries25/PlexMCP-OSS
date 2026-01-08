@@ -9,5 +9,5 @@ pub mod types;
 
 pub use db::*;
 pub use error::*;
-pub use rate_limit::{RateLimitConfig, RateLimitError, RateLimiter, RateLimitResult2};
+pub use rate_limit::{RateLimitConfig, RateLimitError, RateLimitResult2, RateLimiter};
 pub use types::*;

@@ -21,18 +21,20 @@ pub async fn trigger_brute_force_alert(
         format!("user:{}", email)
     };
 
-    alert_service.record_event(
-        AlertType::BruteForceAttack,
-        &threshold_key,
-        user_id,
-        None,
-        ip_address,
-        json!({
-            "email": email,
-            "ip_address": ip_address,
-            "attack_vector": "failed_login"
-        }),
-    ).await
+    alert_service
+        .record_event(
+            AlertType::BruteForceAttack,
+            &threshold_key,
+            user_id,
+            None,
+            ip_address,
+            json!({
+                "email": email,
+                "ip_address": ip_address,
+                "attack_vector": "failed_login"
+            }),
+        )
+        .await
 }
 
 /// Trigger privilege escalation alert
@@ -50,21 +52,23 @@ pub async fn trigger_privilege_escalation_alert(
         return Ok(None);
     }
 
-    alert_service.record_event(
-        AlertType::PrivilegeEscalation,
-        &format!("user:{}", target_user_id),
-        Some(target_user_id),
-        Some(org_id),
-        None,
-        json!({
-            "target_user_id": target_user_id,
-            "target_email": target_email,
-            "old_role": old_role,
-            "new_role": new_role,
-            "changed_by": changed_by,
-            "org_id": org_id
-        }),
-    ).await
+    alert_service
+        .record_event(
+            AlertType::PrivilegeEscalation,
+            &format!("user:{}", target_user_id),
+            Some(target_user_id),
+            Some(org_id),
+            None,
+            json!({
+                "target_user_id": target_user_id,
+                "target_email": target_email,
+                "old_role": old_role,
+                "new_role": new_role,
+                "changed_by": changed_by,
+                "org_id": org_id
+            }),
+        )
+        .await
 }
 
 /// Trigger data exfiltration alert
@@ -76,18 +80,20 @@ pub async fn trigger_data_exfiltration_alert(
     record_count: i64,
     ip_address: Option<&str>,
 ) -> ApiResult<Option<Uuid>> {
-    alert_service.record_event(
-        AlertType::DataExfiltration,
-        &format!("user:{}:export", user_id),
-        Some(user_id),
-        Some(org_id),
-        ip_address,
-        json!({
-            "resource_type": resource_type,
-            "record_count": record_count,
-            "export_type": "bulk_export"
-        }),
-    ).await
+    alert_service
+        .record_event(
+            AlertType::DataExfiltration,
+            &format!("user:{}:export", user_id),
+            Some(user_id),
+            Some(org_id),
+            ip_address,
+            json!({
+                "resource_type": resource_type,
+                "record_count": record_count,
+                "export_type": "bulk_export"
+            }),
+        )
+        .await
 }
 
 /// Trigger configuration change alert
@@ -99,17 +105,19 @@ pub async fn trigger_configuration_change_alert(
     change_details: serde_json::Value,
     ip_address: Option<&str>,
 ) -> ApiResult<Option<Uuid>> {
-    alert_service.record_event(
-        AlertType::ConfigurationChange,
-        &format!("config:{}", config_type),
-        Some(user_id),
-        Some(org_id),
-        ip_address,
-        json!({
-            "config_type": config_type,
-            "change_details": change_details
-        }),
-    ).await
+    alert_service
+        .record_event(
+            AlertType::ConfigurationChange,
+            &format!("config:{}", config_type),
+            Some(user_id),
+            Some(org_id),
+            ip_address,
+            json!({
+                "config_type": config_type,
+                "change_details": change_details
+            }),
+        )
+        .await
 }
 
 /// Trigger rate limit violation alert
@@ -128,17 +136,19 @@ pub async fn trigger_rate_limit_alert(
         "unknown:ratelimit".to_string()
     };
 
-    alert_service.record_event(
-        AlertType::RateLimitViolation,
-        &threshold_key,
-        user_id,
-        org_id,
-        ip_address,
-        json!({
-            "endpoint": endpoint,
-            "violation_type": "rate_limit_exceeded"
-        }),
-    ).await
+    alert_service
+        .record_event(
+            AlertType::RateLimitViolation,
+            &threshold_key,
+            user_id,
+            org_id,
+            ip_address,
+            json!({
+                "endpoint": endpoint,
+                "violation_type": "rate_limit_exceeded"
+            }),
+        )
+        .await
 }
 
 /// Trigger suspicious activity alert
@@ -158,17 +168,19 @@ pub async fn trigger_suspicious_activity_alert(
         "unknown:suspicious".to_string()
     };
 
-    alert_service.record_event(
-        AlertType::SuspiciousActivity,
-        &threshold_key,
-        user_id,
-        org_id,
-        ip_address,
-        json!({
-            "activity_type": activity_type,
-            "details": details
-        }),
-    ).await
+    alert_service
+        .record_event(
+            AlertType::SuspiciousActivity,
+            &threshold_key,
+            user_id,
+            org_id,
+            ip_address,
+            json!({
+                "activity_type": activity_type,
+                "details": details
+            }),
+        )
+        .await
 }
 
 /// Trigger authentication anomaly alert
@@ -180,16 +192,18 @@ pub async fn trigger_auth_anomaly_alert(
     details: serde_json::Value,
     ip_address: Option<&str>,
 ) -> ApiResult<Option<Uuid>> {
-    alert_service.record_event(
-        AlertType::AuthenticationAnomaly,
-        &format!("user:{}:auth_anomaly", user_id),
-        Some(user_id),
-        None,
-        ip_address,
-        json!({
-            "email": email,
-            "anomaly_type": anomaly_type,
-            "details": details
-        }),
-    ).await
+    alert_service
+        .record_event(
+            AlertType::AuthenticationAnomaly,
+            &format!("user:{}:auth_anomaly", user_id),
+            Some(user_id),
+            None,
+            ip_address,
+            json!({
+                "email": email,
+                "anomaly_type": anomaly_type,
+                "details": details
+            }),
+        )
+        .await
 }

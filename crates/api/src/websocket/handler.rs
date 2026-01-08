@@ -66,7 +66,11 @@ pub async fn ws_handler(
             tracing::info!(error = ?e, "PlexMCP token validation failed, trying Supabase");
 
             // Try to verify as Supabase token via API call
-            let auth_user = match crate::auth::middleware::verify_supabase_auth_from_app_state(&app_state, token).await {
+            let auth_user = match crate::auth::middleware::verify_supabase_auth_from_app_state(
+                &app_state, token,
+            )
+            .await
+            {
                 Ok(user) => user,
                 Err(auth_err) => {
                     tracing::warn!(error = ?auth_err, "WebSocket auth failed: invalid token");
@@ -125,13 +129,7 @@ async fn handle_socket(socket: WebSocket, user_id: Uuid, app_state: AppState) {
     }
 
     // Broadcast presence update to all other clients
-    broadcast_presence_to_all(
-        &ws_state,
-        user_id,
-        "online",
-        None,
-    )
-    .await;
+    broadcast_presence_to_all(&ws_state, user_id, "online", None).await;
 
     // Spawn task to send messages to client
     let send_task = tokio::spawn(async move {
@@ -249,7 +247,9 @@ async fn handle_client_event(
 
         TypingStart { ticket_id } => {
             // Update database
-            if let Err(e) = set_typing_indicator(&app_state.pool, ticket_id, conn.user_id, true).await {
+            if let Err(e) =
+                set_typing_indicator(&app_state.pool, ticket_id, conn.user_id, true).await
+            {
                 tracing::error!(error = ?e, "Failed to set typing indicator");
                 return;
             }
@@ -271,7 +271,9 @@ async fn handle_client_event(
 
         TypingStop { ticket_id } => {
             // Remove from database
-            if let Err(e) = set_typing_indicator(&app_state.pool, ticket_id, conn.user_id, false).await {
+            if let Err(e) =
+                set_typing_indicator(&app_state.pool, ticket_id, conn.user_id, false).await
+            {
                 tracing::error!(error = ?e, "Failed to remove typing indicator");
                 return;
             }
@@ -300,7 +302,10 @@ async fn handle_client_event(
                 Ok(viewers) => {
                     ws_state
                         .rooms
-                        .broadcast(&ticket_id, ServerEvent::ViewersUpdate { ticket_id, viewers })
+                        .broadcast(
+                            &ticket_id,
+                            ServerEvent::ViewersUpdate { ticket_id, viewers },
+                        )
                         .await;
                 }
                 Err(e) => {
@@ -320,7 +325,10 @@ async fn handle_client_event(
                 Ok(viewers) => {
                     ws_state
                         .rooms
-                        .broadcast(&ticket_id, ServerEvent::ViewersUpdate { ticket_id, viewers })
+                        .broadcast(
+                            &ticket_id,
+                            ServerEvent::ViewersUpdate { ticket_id, viewers },
+                        )
                         .await;
                 }
                 Err(e) => {
@@ -355,13 +363,7 @@ async fn handle_client_event(
             }
 
             // Broadcast to all clients
-            broadcast_presence_to_all(
-                &ws_state,
-                conn.user_id,
-                &status,
-                None,
-            )
-            .await;
+            broadcast_presence_to_all(&ws_state, conn.user_id, &status, None).await;
 
             tracing::info!(user_id = %conn.user_id, status = %status, "User presence updated");
         }
@@ -373,7 +375,11 @@ async fn handle_client_event(
 // =============================================================================
 
 /// Verify user has access to a ticket
-async fn verify_ticket_access(pool: &PgPool, user_id: Uuid, ticket_id: Uuid) -> Result<bool, sqlx::Error> {
+async fn verify_ticket_access(
+    pool: &PgPool,
+    user_id: Uuid,
+    ticket_id: Uuid,
+) -> Result<bool, sqlx::Error> {
     let has_access = sqlx::query_scalar::<_, bool>(
         r#"
         SELECT EXISTS(
@@ -401,7 +407,11 @@ async fn verify_ticket_access(pool: &PgPool, user_id: Uuid, ticket_id: Uuid) -> 
 }
 
 /// Update user presence status
-async fn update_user_presence(pool: &PgPool, user_id: Uuid, status: &str) -> Result<(), sqlx::Error> {
+async fn update_user_presence(
+    pool: &PgPool,
+    user_id: Uuid,
+    status: &str,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         INSERT INTO user_presence (user_id, online_status, last_activity_at, last_seen_at)
@@ -453,7 +463,11 @@ async fn set_typing_indicator(
 }
 
 /// Add user as ticket viewer
-async fn add_ticket_viewer(pool: &PgPool, ticket_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
+async fn add_ticket_viewer(
+    pool: &PgPool,
+    ticket_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         INSERT INTO ticket_viewers (ticket_id, user_id)
@@ -471,7 +485,11 @@ async fn add_ticket_viewer(pool: &PgPool, ticket_id: Uuid, user_id: Uuid) -> Res
 }
 
 /// Remove user from ticket viewers
-async fn remove_ticket_viewer(pool: &PgPool, ticket_id: Uuid, user_id: Uuid) -> Result<(), sqlx::Error> {
+async fn remove_ticket_viewer(
+    pool: &PgPool,
+    ticket_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM ticket_viewers WHERE ticket_id = $1 AND user_id = $2")
         .bind(ticket_id)
         .bind(user_id)
@@ -491,7 +509,10 @@ async fn get_user_name(pool: &PgPool, user_id: Uuid) -> String {
 }
 
 /// Get all viewers for a ticket
-async fn get_ticket_viewers(pool: &PgPool, ticket_id: Uuid) -> Result<Vec<TicketViewer>, sqlx::Error> {
+async fn get_ticket_viewers(
+    pool: &PgPool,
+    ticket_id: Uuid,
+) -> Result<Vec<TicketViewer>, sqlx::Error> {
     #[derive(sqlx::FromRow)]
     struct ViewerRow {
         user_id: Uuid,

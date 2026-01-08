@@ -12,7 +12,7 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
-    auth::{AuthUser, AuthMethod},
+    auth::{AuthMethod, AuthUser},
     error::{ApiError, ApiResult},
     state::AppState,
 };
@@ -90,12 +90,10 @@ async fn resolve_user_id(pool: &PgPool, auth_user: &AuthUser) -> Result<Uuid, Ap
     // If not, look up by email
     if matches!(auth_user.auth_method, AuthMethod::SupabaseJwt) {
         // First, check if this user_id exists in users table
-        let exists: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM users WHERE id = $1"
-        )
-        .bind(auth_user_id)
-        .fetch_optional(pool)
-        .await?;
+        let exists: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE id = $1")
+            .bind(auth_user_id)
+            .fetch_optional(pool)
+            .await?;
 
         if exists.is_some() {
             return Ok(auth_user_id);
@@ -103,12 +101,10 @@ async fn resolve_user_id(pool: &PgPool, auth_user: &AuthUser) -> Result<Uuid, Ap
 
         // If not found by ID, look up by email
         if let Some(ref email) = auth_user.email {
-            let user: Option<(Uuid,)> = sqlx::query_as(
-                "SELECT id FROM users WHERE email = $1"
-            )
-            .bind(email)
-            .fetch_optional(pool)
-            .await?;
+            let user: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE email = $1")
+                .bind(email)
+                .fetch_optional(pool)
+                .await?;
 
             if let Some((user_id,)) = user {
                 tracing::debug!(
@@ -205,20 +201,26 @@ pub async fn update_notification_preferences(
     .await?;
 
     // Apply updates, using current values or defaults for unspecified fields
-    let email_alerts = req.email_alerts.unwrap_or_else(|| {
-        current.as_ref().map(|c| c.email_alerts).unwrap_or(true)
-    });
-    let weekly_digest = req.weekly_digest.unwrap_or_else(|| {
-        current.as_ref().map(|c| c.weekly_digest).unwrap_or(false)
-    });
-    let usage_alerts = req.usage_alerts.unwrap_or_else(|| {
-        current.as_ref().map(|c| c.usage_alerts).unwrap_or(true)
-    });
+    let email_alerts = req
+        .email_alerts
+        .unwrap_or_else(|| current.as_ref().map(|c| c.email_alerts).unwrap_or(true));
+    let weekly_digest = req
+        .weekly_digest
+        .unwrap_or_else(|| current.as_ref().map(|c| c.weekly_digest).unwrap_or(false));
+    let usage_alerts = req
+        .usage_alerts
+        .unwrap_or_else(|| current.as_ref().map(|c| c.usage_alerts).unwrap_or(true));
     let api_error_notifications = req.api_error_notifications.unwrap_or_else(|| {
-        current.as_ref().map(|c| c.api_error_notifications).unwrap_or(true)
+        current
+            .as_ref()
+            .map(|c| c.api_error_notifications)
+            .unwrap_or(true)
     });
     let marketing_emails = req.marketing_emails.unwrap_or_else(|| {
-        current.as_ref().map(|c| c.marketing_emails).unwrap_or(false)
+        current
+            .as_ref()
+            .map(|c| c.marketing_emails)
+            .unwrap_or(false)
     });
 
     // Upsert preferences

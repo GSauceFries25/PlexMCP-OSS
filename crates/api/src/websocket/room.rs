@@ -27,7 +27,10 @@ impl RoomManager {
     /// Add a connection to a ticket room
     pub async fn join(&self, ticket_id: Uuid, conn: Arc<Connection>) {
         let mut rooms = self.rooms.write().await;
-        rooms.entry(ticket_id).or_insert_with(Vec::new).push(Arc::clone(&conn));
+        rooms
+            .entry(ticket_id)
+            .or_insert_with(Vec::new)
+            .push(Arc::clone(&conn));
 
         let count = rooms.get(&ticket_id).map(|v| v.len()).unwrap_or(0);
         tracing::debug!(

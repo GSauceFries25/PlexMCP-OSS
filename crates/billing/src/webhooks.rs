@@ -6,10 +6,7 @@
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use sqlx::PgPool;
-use stripe::{
-    Event, EventObject, EventType, Invoice, Subscription,
-    Webhook,
-};
+use stripe::{Event, EventObject, EventType, Invoice, Subscription, Webhook};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -36,7 +33,12 @@ pub struct WebhookHandler {
 impl WebhookHandler {
     pub fn new(stripe: StripeClient, pool: PgPool, email: BillingEmailService) -> Self {
         let event_logger = BillingEventLogger::new(pool.clone());
-        Self { stripe, pool, email, event_logger }
+        Self {
+            stripe,
+            pool,
+            email,
+            event_logger,
+        }
     }
 
     /// Verify and parse a Stripe webhook event
@@ -116,14 +118,15 @@ impl WebhookHandler {
 
         // Compute expected signature
         // The secret starts with "whsec_" which is a base64-encoded key
-        let secret_key = webhook_secret.strip_prefix("whsec_").unwrap_or(webhook_secret);
+        let secret_key = webhook_secret
+            .strip_prefix("whsec_")
+            .unwrap_or(webhook_secret);
         let signed_payload = format!("{}.{}", timestamp, payload);
 
-        let mut mac = HmacSha256::new_from_slice(secret_key.as_bytes())
-            .map_err(|_| {
-                tracing::error!("Invalid webhook secret key");
-                BillingError::WebhookSignatureInvalid
-            })?;
+        let mut mac = HmacSha256::new_from_slice(secret_key.as_bytes()).map_err(|_| {
+            tracing::error!("Invalid webhook secret key");
+            BillingError::WebhookSignatureInvalid
+        })?;
         mac.update(signed_payload.as_bytes());
         let computed = hex::encode(mac.finalize().into_bytes());
 
@@ -212,7 +215,7 @@ impl WebhookHandler {
         if claimed.is_none() {
             // Check if it was already processed successfully or is being actively processed
             let existing_status: Option<(String,)> = sqlx::query_as(
-                "SELECT processing_result FROM stripe_webhook_events WHERE stripe_event_id = $1"
+                "SELECT processing_result FROM stripe_webhook_events WHERE stripe_event_id = $1",
             )
             .bind(&event_id)
             .fetch_optional(&self.pool)
@@ -222,7 +225,9 @@ impl WebhookHandler {
 
             let reason = match existing_status {
                 Some((status,)) if status == "success" => "already processed successfully",
-                Some((status,)) if status == "processing" => "currently being processed by another worker",
+                Some((status,)) if status == "processing" => {
+                    "currently being processed by another worker"
+                }
                 Some(_) => "exists with another status",
                 None => "unknown (race condition?)",
             };
@@ -257,7 +262,7 @@ impl WebhookHandler {
             UPDATE stripe_webhook_events
             SET processing_result = $1, error_message = $2
             WHERE stripe_event_id = $3
-            "#
+            "#,
         )
         .bind(&processing_result)
         .bind(&error_message)
@@ -278,7 +283,7 @@ impl WebhookHandler {
                 UPDATE stripe_webhook_events
                 SET processing_result = $1, error_message = $2
                 WHERE stripe_event_id = $3
-                "#
+                "#,
             )
             .bind(&processing_result)
             .bind(&error_message)
@@ -390,20 +395,30 @@ impl WebhookHandler {
         let org_id = self.get_org_id_from_metadata(&subscription.metadata)?;
 
         let sub_service = SubscriptionService::new(self.stripe.clone(), self.pool.clone());
-        sub_service.sync_subscription_to_db(org_id, &subscription).await?;
+        sub_service
+            .sync_subscription_to_db(org_id, &subscription)
+            .await?;
 
         // Log billing event
-        let tier = subscription.metadata.get("tier").cloned().unwrap_or_default();
-        if let Err(e) = self.event_logger.log_event(
-            BillingEventBuilder::new(org_id, BillingEventType::SubscriptionCreated)
-                .data(serde_json::json!({
-                    "tier": tier,
-                    "status": format!("{:?}", subscription.status),
-                }))
-                .stripe_event(&event_id)
-                .stripe_subscription(subscription.id.to_string())
-                .actor_type(ActorType::Stripe)
-        ).await {
+        let tier = subscription
+            .metadata
+            .get("tier")
+            .cloned()
+            .unwrap_or_default();
+        if let Err(e) = self
+            .event_logger
+            .log_event(
+                BillingEventBuilder::new(org_id, BillingEventType::SubscriptionCreated)
+                    .data(serde_json::json!({
+                        "tier": tier,
+                        "status": format!("{:?}", subscription.status),
+                    }))
+                    .stripe_event(&event_id)
+                    .stripe_subscription(subscription.id.to_string())
+                    .actor_type(ActorType::Stripe),
+            )
+            .await
+        {
             tracing::warn!(error = %e, "Failed to log subscription created event");
         }
 
@@ -422,19 +437,25 @@ impl WebhookHandler {
         let org_id = self.get_org_id_from_metadata(&subscription.metadata)?;
 
         let sub_service = SubscriptionService::new(self.stripe.clone(), self.pool.clone());
-        sub_service.sync_subscription_to_db(org_id, &subscription).await?;
+        sub_service
+            .sync_subscription_to_db(org_id, &subscription)
+            .await?;
 
         // Log billing event
-        if let Err(e) = self.event_logger.log_event(
-            BillingEventBuilder::new(org_id, BillingEventType::SubscriptionUpdated)
-                .data(serde_json::json!({
-                    "status": format!("{:?}", subscription.status),
-                    "cancel_at_period_end": subscription.cancel_at_period_end,
-                }))
-                .stripe_event(&event_id)
-                .stripe_subscription(subscription.id.to_string())
-                .actor_type(ActorType::Stripe)
-        ).await {
+        if let Err(e) = self
+            .event_logger
+            .log_event(
+                BillingEventBuilder::new(org_id, BillingEventType::SubscriptionUpdated)
+                    .data(serde_json::json!({
+                        "status": format!("{:?}", subscription.status),
+                        "cancel_at_period_end": subscription.cancel_at_period_end,
+                    }))
+                    .stripe_event(&event_id)
+                    .stripe_subscription(subscription.id.to_string())
+                    .actor_type(ActorType::Stripe),
+            )
+            .await
+        {
             tracing::warn!(error = %e, "Failed to log subscription updated event");
         }
 
@@ -447,7 +468,11 @@ impl WebhookHandler {
             );
             // Send notification email to org owner
             if let Ok(Some((email, org_name))) = self.get_org_owner_email(org_id).await {
-                if let Err(e) = self.email.send_subscription_past_due(&email, &org_name).await {
+                if let Err(e) = self
+                    .email
+                    .send_subscription_past_due(&email, &org_name)
+                    .await
+                {
                     tracing::error!(error = %e, "Failed to send past due email");
                 }
             }
@@ -469,22 +494,26 @@ impl WebhookHandler {
         let org_id = self.get_org_id_from_metadata(&subscription.metadata)?;
 
         // Log billing event
-        if let Err(e) = self.event_logger.log_event(
-            BillingEventBuilder::new(org_id, BillingEventType::SubscriptionCanceled)
-                .data(serde_json::json!({
-                    "previous_status": format!("{:?}", subscription.status),
-                    "period_end": subscription.current_period_end,
-                }))
-                .stripe_event(&event_id)
-                .stripe_subscription(subscription.id.to_string())
-                .actor_type(ActorType::Stripe)
-        ).await {
+        if let Err(e) = self
+            .event_logger
+            .log_event(
+                BillingEventBuilder::new(org_id, BillingEventType::SubscriptionCanceled)
+                    .data(serde_json::json!({
+                        "previous_status": format!("{:?}", subscription.status),
+                        "period_end": subscription.current_period_end,
+                    }))
+                    .stripe_event(&event_id)
+                    .stripe_subscription(subscription.id.to_string())
+                    .actor_type(ActorType::Stripe),
+            )
+            .await
+        {
             tracing::warn!(error = %e, "Failed to log subscription deleted event");
         }
 
         // Downgrade to free tier
         sqlx::query(
-            "UPDATE organizations SET subscription_tier = 'free', updated_at = NOW() WHERE id = $1"
+            "UPDATE organizations SET subscription_tier = 'free', updated_at = NOW() WHERE id = $1",
         )
         .bind(org_id)
         .execute(&self.pool)
@@ -495,7 +524,7 @@ impl WebhookHandler {
             r#"
             UPDATE subscriptions SET status = 'canceled', updated_at = NOW()
             WHERE stripe_subscription_id = $1
-            "#
+            "#,
         )
         .bind(subscription.id.as_str())
         .execute(&self.pool)
@@ -506,7 +535,11 @@ impl WebhookHandler {
             let end_date = OffsetDateTime::from_unix_timestamp(subscription.current_period_end)
                 .map(|dt| dt.date().to_string())
                 .unwrap_or_else(|_| "soon".to_string());
-            if let Err(e) = self.email.send_subscription_cancelled(&email, &org_name, &end_date).await {
+            if let Err(e) = self
+                .email
+                .send_subscription_cancelled(&email, &org_name, &end_date)
+                .await
+            {
                 tracing::error!(error = %e, "Failed to send cancellation email");
             }
         }
@@ -526,16 +559,20 @@ impl WebhookHandler {
         let org_id = self.get_org_id_from_metadata(&subscription.metadata)?;
 
         // Log billing event
-        if let Err(e) = self.event_logger.log_event(
-            BillingEventBuilder::new(org_id, BillingEventType::TrialEnding)
-                .data(serde_json::json!({
-                    "trial_end": subscription.trial_end,
-                    "days_remaining": 3,
-                }))
-                .stripe_event(&event_id)
-                .stripe_subscription(subscription.id.to_string())
-                .actor_type(ActorType::Stripe)
-        ).await {
+        if let Err(e) = self
+            .event_logger
+            .log_event(
+                BillingEventBuilder::new(org_id, BillingEventType::TrialEnding)
+                    .data(serde_json::json!({
+                        "trial_end": subscription.trial_end,
+                        "days_remaining": 3,
+                    }))
+                    .stripe_event(&event_id)
+                    .stripe_subscription(subscription.id.to_string())
+                    .actor_type(ActorType::Stripe),
+            )
+            .await
+        {
             tracing::warn!(error = %e, "Failed to log trial ending event");
         }
 
@@ -566,7 +603,11 @@ impl WebhookHandler {
                 .map(|s| s.as_str())
                 .unwrap_or("Pro");
 
-            if let Err(e) = self.email.send_trial_ending(&email, &org_name, days_remaining, tier).await {
+            if let Err(e) = self
+                .email
+                .send_trial_ending(&email, &org_name, days_remaining, tier)
+                .await
+            {
                 tracing::error!(error = %e, "Failed to send trial ending email");
             }
         }
@@ -602,11 +643,8 @@ impl WebhookHandler {
         }
 
         // Check for instant charge payment
-        let instant_charge_service = InstantChargeService::new(
-            self.stripe.clone(),
-            self.pool.clone(),
-            self.email.clone(),
-        );
+        let instant_charge_service =
+            InstantChargeService::new(self.stripe.clone(), self.pool.clone(), self.email.clone());
         if let Ok(Some(charge)) = instant_charge_service.mark_paid(&invoice_id).await {
             tracing::info!(
                 org_id = %org_id,
@@ -630,14 +668,25 @@ impl WebhookHandler {
             // Send confirmation email
             if let Ok(Some((email, org_name))) = self.get_org_owner_email(org_id).await {
                 let amount_cents = invoice.amount_paid.unwrap_or(0) as i32;
-                if let Err(e) = self.email.send_pay_now_confirmation(&email, &org_name, amount_cents, early_payments_marked).await {
+                if let Err(e) = self
+                    .email
+                    .send_pay_now_confirmation(
+                        &email,
+                        &org_name,
+                        amount_cents,
+                        early_payments_marked,
+                    )
+                    .await
+                {
                     tracing::error!(error = %e, "Failed to send pay now confirmation email");
                 }
             }
         }
 
         // Also check for regular invoiced overage charges (from billing cycle)
-        let invoiced_charges_marked = overage_service.mark_invoiced_charges_paid(org_id, &invoice_id).await
+        let invoiced_charges_marked = overage_service
+            .mark_invoiced_charges_paid(org_id, &invoice_id)
+            .await
             .unwrap_or_else(|e| {
                 // Log at error level - this is a data inconsistency that needs attention
                 // We continue processing because the invoice is already paid in Stripe,
@@ -706,7 +755,9 @@ impl WebhookHandler {
         let sub_service = SubscriptionService::new(self.stripe.clone(), self.pool.clone());
         match sub_service.process_scheduled_downgrade(org_id).await {
             Ok(Some(subscription)) => {
-                let new_tier = subscription.metadata.get("tier")
+                let new_tier = subscription
+                    .metadata
+                    .get("tier")
                     .cloned()
                     .unwrap_or_else(|| "lower tier".to_string());
                 tracing::info!(
@@ -717,7 +768,10 @@ impl WebhookHandler {
 
                 // Suspend excess members due to plan downgrade
                 let member_service = MemberSuspensionService::new(self.pool.clone());
-                match member_service.suspend_excess_members(org_id, &new_tier, "plan_downgrade").await {
+                match member_service
+                    .suspend_excess_members(org_id, &new_tier, "plan_downgrade")
+                    .await
+                {
                     Ok(result) if result.suspended_count > 0 => {
                         tracing::info!(
                             org_id = %org_id,
@@ -728,10 +782,11 @@ impl WebhookHandler {
 
                         // Send notification to suspended members
                         for member in &result.suspended_members {
-                            if let Err(e) = self.email.send_member_suspended(
-                                &member.email,
-                                &new_tier,
-                            ).await {
+                            if let Err(e) = self
+                                .email
+                                .send_member_suspended(&member.email, &new_tier)
+                                .await
+                            {
                                 tracing::error!(
                                     error = %e,
                                     email = %member.email,
@@ -754,7 +809,11 @@ impl WebhookHandler {
 
                 // Send email notification about the downgrade
                 if let Ok(Some((email, org_name))) = self.get_org_owner_email(org_id).await {
-                    if let Err(e) = self.email.send_subscription_downgraded(&email, &org_name, &new_tier).await {
+                    if let Err(e) = self
+                        .email
+                        .send_subscription_downgraded(&email, &org_name, &new_tier)
+                        .await
+                    {
                         tracing::error!(error = %e, "Failed to send downgrade confirmation email");
                     }
                 }
@@ -789,7 +848,8 @@ impl WebhookHandler {
         let org_id = self.get_org_id_from_customer(&invoice.customer).await?;
 
         // Store invoice record
-        self.store_invoice(org_id, &invoice, "uncollectible").await?;
+        self.store_invoice(org_id, &invoice, "uncollectible")
+            .await?;
 
         let invoice_id = invoice.id.to_string();
         let attempt_count = invoice.attempt_count.unwrap_or(0) as i32;
@@ -803,7 +863,7 @@ impl WebhookHandler {
                 updated_at = NOW()
             WHERE stripe_invoice_id = $1
             RETURNING attempt_count
-            "#
+            "#,
         )
         .bind(&invoice_id)
         .fetch_optional(&self.pool)
@@ -827,12 +887,11 @@ impl WebhookHandler {
         }
 
         // Check if this was an instant charge and mark it failed
-        let instant_charge_service = InstantChargeService::new(
-            self.stripe.clone(),
-            self.pool.clone(),
-            self.email.clone(),
-        );
-        instant_charge_service.mark_failed(&invoice_id, "Payment failed").await?;
+        let instant_charge_service =
+            InstantChargeService::new(self.stripe.clone(), self.pool.clone(), self.email.clone());
+        instant_charge_service
+            .mark_failed(&invoice_id, "Payment failed")
+            .await?;
 
         tracing::warn!(
             org_id = %org_id,
@@ -851,7 +910,11 @@ impl WebhookHandler {
             match attempt_count {
                 0..=1 => {
                     // First attempt - standard notification
-                    if let Err(e) = self.email.send_payment_failed_invoice(&email, &org_name, amount_cents, invoice_url).await {
+                    if let Err(e) = self
+                        .email
+                        .send_payment_failed_invoice(&email, &org_name, amount_cents, invoice_url)
+                        .await
+                    {
                         tracing::error!(error = %e, "Failed to send payment failed email");
                     }
                 }
@@ -862,7 +925,11 @@ impl WebhookHandler {
                         attempt_count = attempt_count,
                         "Payment failed multiple times - sending urgent notification"
                     );
-                    if let Err(e) = self.email.send_payment_failed_invoice(&email, &org_name, amount_cents, invoice_url).await {
+                    if let Err(e) = self
+                        .email
+                        .send_payment_failed_invoice(&email, &org_name, amount_cents, invoice_url)
+                        .await
+                    {
                         tracing::error!(error = %e, "Failed to send urgent payment failed email");
                     }
                 }
@@ -874,7 +941,11 @@ impl WebhookHandler {
                         "Payment failed repeatedly - service suspension may occur"
                     );
                     // Send final warning
-                    if let Err(e) = self.email.send_payment_failed_invoice(&email, &org_name, amount_cents, invoice_url).await {
+                    if let Err(e) = self
+                        .email
+                        .send_payment_failed_invoice(&email, &org_name, amount_cents, invoice_url)
+                        .await
+                    {
                         tracing::error!(error = %e, "Failed to send final payment warning email");
                     }
 
@@ -932,7 +1003,10 @@ impl WebhookHandler {
 
         // Check for pending overages that will be added to this invoice
         let overage_service = OverageService::new(self.stripe.clone(), self.pool.clone());
-        let pending_overages = overage_service.get_pending_overage_total(org_id).await.unwrap_or(0);
+        let pending_overages = overage_service
+            .get_pending_overage_total(org_id)
+            .await
+            .unwrap_or(0);
 
         let total_expected = amount_due + pending_overages;
 
@@ -948,12 +1022,16 @@ impl WebhookHandler {
         // Send notification email if there are pending overages or significant amount due
         if total_expected > 0 {
             if let Ok(Some((email, org_name))) = self.get_org_owner_email(org_id).await {
-                if let Err(e) = self.email.send_upcoming_invoice(
-                    &email,
-                    &org_name,
-                    amount_due as i32,
-                    pending_overages as i32,
-                ).await {
+                if let Err(e) = self
+                    .email
+                    .send_upcoming_invoice(
+                        &email,
+                        &org_name,
+                        amount_due as i32,
+                        pending_overages as i32,
+                    )
+                    .await
+                {
                     tracing::error!(
                         org_id = %org_id,
                         error = %e,
@@ -964,17 +1042,21 @@ impl WebhookHandler {
         }
 
         // Log billing event
-        if let Err(e) = self.event_logger.log_event(
-            BillingEventBuilder::new(org_id, BillingEventType::InvoiceUpcoming)
-                .data(serde_json::json!({
-                    "invoice_id": invoice_id,
-                    "subscription_amount_cents": amount_due,
-                    "pending_overage_cents": pending_overages,
-                    "total_expected_cents": total_expected,
-                }))
-                .stripe_event(&invoice_id)
-                .actor_type(ActorType::Stripe)
-        ).await {
+        if let Err(e) = self
+            .event_logger
+            .log_event(
+                BillingEventBuilder::new(org_id, BillingEventType::InvoiceUpcoming)
+                    .data(serde_json::json!({
+                        "invoice_id": invoice_id,
+                        "subscription_amount_cents": amount_due,
+                        "pending_overage_cents": pending_overages,
+                        "total_expected_cents": total_expected,
+                    }))
+                    .stripe_event(&invoice_id)
+                    .actor_type(ActorType::Stripe),
+            )
+            .await
+        {
             tracing::warn!(error = %e, "Failed to log invoice upcoming event");
         }
 
@@ -984,9 +1066,11 @@ impl WebhookHandler {
     async fn handle_checkout_completed(&self, event: Event) -> BillingResult<()> {
         let session = match event.data.object {
             EventObject::CheckoutSession(session) => session,
-            _ => return Err(BillingError::WebhookEventNotSupported(
-                "Expected CheckoutSession".to_string()
-            )),
+            _ => {
+                return Err(BillingError::WebhookEventNotSupported(
+                    "Expected CheckoutSession".to_string(),
+                ))
+            }
         };
 
         if let Some(metadata) = &session.metadata {
@@ -1000,7 +1084,8 @@ impl WebhookHandler {
                 if checkout_type == Some("overage_payment") {
                     // Handle overage payment completion
                     let session_id = session.id.to_string();
-                    let overage_service = OverageService::new(self.stripe.clone(), self.pool.clone());
+                    let overage_service =
+                        OverageService::new(self.stripe.clone(), self.pool.clone());
 
                     match overage_service.mark_early_payment_paid(&session_id).await {
                         Ok(count) if count > 0 => {
@@ -1071,8 +1156,12 @@ impl WebhookHandler {
                 // Handle upgrade payment checkout completion
                 if checkout_type == Some("upgrade_payment") {
                     let new_tier = metadata.get("new_tier").map(|s| s.as_str()).unwrap_or("");
-                    let billing_interval = metadata.get("billing_interval").map(|s| s.as_str()).unwrap_or("monthly");
-                    let overage_cents: i64 = metadata.get("overage_cents")
+                    let billing_interval = metadata
+                        .get("billing_interval")
+                        .map(|s| s.as_str())
+                        .unwrap_or("monthly");
+                    let overage_cents: i64 = metadata
+                        .get("overage_cents")
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(0);
 
@@ -1093,8 +1182,12 @@ impl WebhookHandler {
                     );
 
                     // 1. Update the subscription to the new tier
-                    let sub_service = SubscriptionService::new(self.stripe.clone(), self.pool.clone());
-                    match sub_service.upgrade_subscription_after_payment(org_id, new_tier, billing_interval).await {
+                    let sub_service =
+                        SubscriptionService::new(self.stripe.clone(), self.pool.clone());
+                    match sub_service
+                        .upgrade_subscription_after_payment(org_id, new_tier, billing_interval)
+                        .await
+                    {
                         Ok(_) => {
                             tracing::info!(
                                 org_id = %org_id,
@@ -1115,7 +1208,8 @@ impl WebhookHandler {
 
                     // 2. Mark overages as paid (if any were included)
                     if overage_cents > 0 {
-                        let overage_service = OverageService::new(self.stripe.clone(), self.pool.clone());
+                        let overage_service =
+                            OverageService::new(self.stripe.clone(), self.pool.clone());
                         match overage_service.mark_upgrade_overages_paid(org_id).await {
                             Ok(count) => {
                                 tracing::info!(
@@ -1146,7 +1240,7 @@ impl WebhookHandler {
                             )
                             VALUES ($1, $2, $3, $3, 'usd', 'paid', $4, NOW(), 'upgrade_payment')
                             ON CONFLICT (stripe_invoice_id) DO NOTHING
-                            "#
+                            "#,
                         )
                         .bind(org_id)
                         .bind(&session_id)
@@ -1162,7 +1256,8 @@ impl WebhookHandler {
                 // Handle addon checkout completion
                 if checkout_type == Some("addon") {
                     let addon_type = metadata.get("addon_type").map(|s| s.as_str()).unwrap_or("");
-                    let quantity: u32 = metadata.get("quantity")
+                    let quantity: u32 = metadata
+                        .get("quantity")
                         .and_then(|s| s.parse().ok())
                         .unwrap_or(1);
 
@@ -1204,23 +1299,23 @@ impl WebhookHandler {
                                  This may indicate a checkout flow bug or data inconsistency."
                             );
                             return Err(BillingError::SubscriptionRequired(
-                                "Addon purchase requires an active subscription".to_string()
+                                "Addon purchase requires an active subscription".to_string(),
                             ));
                         }
                     };
 
                     // Get the new subscription from the session to extract addon item info
                     if let Some(subscription_id) = session.subscription {
-                        let parsed_sub_id = subscription_id.id().parse()
-                            .map_err(|e| {
-                                tracing::error!("Failed to parse subscription ID: {}", e);
-                                BillingError::SubscriptionNotFound(subscription_id.id().to_string())
-                            })?;
+                        let parsed_sub_id = subscription_id.id().parse().map_err(|e| {
+                            tracing::error!("Failed to parse subscription ID: {}", e);
+                            BillingError::SubscriptionNotFound(subscription_id.id().to_string())
+                        })?;
                         let subscription = stripe::Subscription::retrieve(
                             self.stripe.inner(),
                             &parsed_sub_id,
-                            &[]
-                        ).await?;
+                            &[],
+                        )
+                        .await?;
 
                         // Note: We intentionally DO NOT sync this new subscription to DB
                         // as the org already has an existing subscription. The addon checkout
@@ -1236,12 +1331,19 @@ impl WebhookHandler {
 
                         // Find the subscription item for this addon
                         // First try to match by config price, then take the last item (addon)
-                        let addon_item = subscription.items.data.iter()
+                        let addon_item = subscription
+                            .items
+                            .data
+                            .iter()
                             .find(|item| {
-                                item.price.as_ref()
+                                item.price
+                                    .as_ref()
                                     .map(|p| {
                                         let item_price = p.id.as_str();
-                                        config_price_id.as_ref().map(|pid| item_price == pid).unwrap_or(false)
+                                        config_price_id
+                                            .as_ref()
+                                            .map(|pid| item_price == pid)
+                                            .unwrap_or(false)
                                     })
                                     .unwrap_or(false)
                             })
@@ -1320,19 +1422,19 @@ impl WebhookHandler {
 
                 // Get the subscription from the session (for subscription checkouts)
                 if let Some(subscription_id) = session.subscription {
-                    let parsed_sub_id = subscription_id.id().parse()
-                        .map_err(|e| {
-                            tracing::error!("Failed to parse subscription ID: {}", e);
-                            BillingError::SubscriptionNotFound(subscription_id.id().to_string())
-                        })?;
-                    let subscription = stripe::Subscription::retrieve(
-                        self.stripe.inner(),
-                        &parsed_sub_id,
-                        &[]
-                    ).await?;
+                    let parsed_sub_id = subscription_id.id().parse().map_err(|e| {
+                        tracing::error!("Failed to parse subscription ID: {}", e);
+                        BillingError::SubscriptionNotFound(subscription_id.id().to_string())
+                    })?;
+                    let subscription =
+                        stripe::Subscription::retrieve(self.stripe.inner(), &parsed_sub_id, &[])
+                            .await?;
 
-                    let sub_service = SubscriptionService::new(self.stripe.clone(), self.pool.clone());
-                    sub_service.sync_subscription_to_db(org_id, &subscription).await?;
+                    let sub_service =
+                        SubscriptionService::new(self.stripe.clone(), self.pool.clone());
+                    sub_service
+                        .sync_subscription_to_db(org_id, &subscription)
+                        .await?;
 
                     tracing::info!(
                         org_id = %org_id,
@@ -1371,7 +1473,7 @@ impl WebhookHandler {
         match event.data.object {
             EventObject::Subscription(subscription) => Ok(subscription),
             _ => Err(BillingError::WebhookEventNotSupported(
-                "Expected Subscription".to_string()
+                "Expected Subscription".to_string(),
             )),
         }
     }
@@ -1380,7 +1482,7 @@ impl WebhookHandler {
         match event.data.object {
             EventObject::Invoice(invoice) => Ok(invoice),
             _ => Err(BillingError::WebhookEventNotSupported(
-                "Expected Invoice".to_string()
+                "Expected Invoice".to_string(),
             )),
         }
     }
@@ -1405,12 +1507,11 @@ impl WebhookHandler {
             None => return Err(BillingError::Internal("No customer on invoice".to_string())),
         };
 
-        let result: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM organizations WHERE stripe_customer_id = $1"
-        )
-        .bind(&customer_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let result: Option<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM organizations WHERE stripe_customer_id = $1")
+                .bind(&customer_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         result
             .map(|(id,)| id)
@@ -1426,7 +1527,7 @@ impl WebhookHandler {
             JOIN organizations o ON o.id = u.org_id
             WHERE u.org_id = $1 AND u.role = 'owner'
             LIMIT 1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -1442,7 +1543,8 @@ impl WebhookHandler {
         invoice: &Invoice,
         status: &str,
     ) -> BillingResult<Uuid> {
-        let due_date = invoice.due_date
+        let due_date = invoice
+            .due_date
             .map(|t| OffsetDateTime::from_unix_timestamp(t).unwrap_or(OffsetDateTime::now_utc()));
 
         let paid_at = if status == "paid" {
@@ -1452,9 +1554,11 @@ impl WebhookHandler {
         };
 
         // Extract period dates from subscription if available
-        let period_start = invoice.period_start
+        let period_start = invoice
+            .period_start
             .map(|t| OffsetDateTime::from_unix_timestamp(t).unwrap_or(OffsetDateTime::now_utc()));
-        let period_end = invoice.period_end
+        let period_end = invoice
+            .period_end
             .map(|t| OffsetDateTime::from_unix_timestamp(t).unwrap_or(OffsetDateTime::now_utc()));
 
         // Calculate grace period (due_date + 30 days)
@@ -1521,12 +1625,11 @@ impl WebhookHandler {
         .await?;
 
         // Get the actual invoice ID (either new or existing from upsert)
-        let actual_invoice_id: (Uuid,) = sqlx::query_as(
-            "SELECT id FROM invoices WHERE stripe_invoice_id = $1"
-        )
-        .bind(invoice.id.to_string())
-        .fetch_one(&self.pool)
-        .await?;
+        let actual_invoice_id: (Uuid,) =
+            sqlx::query_as("SELECT id FROM invoices WHERE stripe_invoice_id = $1")
+                .bind(invoice.id.to_string())
+                .fetch_one(&self.pool)
+                .await?;
 
         let invoice_id = actual_invoice_id.0;
 
@@ -1556,10 +1659,14 @@ impl WebhookHandler {
         };
 
         for line in lines {
-            let period_start = line.period.as_ref()
+            let period_start = line
+                .period
+                .as_ref()
                 .and_then(|p| p.start)
                 .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok());
-            let period_end = line.period.as_ref()
+            let period_end = line
+                .period
+                .as_ref()
                 .and_then(|p| p.end)
                 .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok());
 
@@ -1580,7 +1687,11 @@ impl WebhookHandler {
                 None => {
                     // Calculate unit amount from total and quantity
                     let qty = line.quantity.unwrap_or(1) as i64;
-                    let unit_amt = if qty > 0 { line.amount / qty } else { line.amount };
+                    let unit_amt = if qty > 0 {
+                        line.amount / qty
+                    } else {
+                        line.amount
+                    };
                     (None, None, None, unit_amt)
                 }
             };
@@ -1597,7 +1708,7 @@ impl WebhookHandler {
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
                 )
                 ON CONFLICT DO NOTHING
-                "#
+                "#,
             )
             .bind(Uuid::new_v4())
             .bind(invoice_id)
@@ -1626,7 +1737,11 @@ impl WebhookHandler {
         let event_id = event.id.to_string();
         let charge = match event.data.object {
             EventObject::Charge(charge) => charge,
-            _ => return Err(BillingError::WebhookEventNotSupported("Expected Charge".to_string())),
+            _ => {
+                return Err(BillingError::WebhookEventNotSupported(
+                    "Expected Charge".to_string(),
+                ))
+            }
         };
 
         let customer_id = match &charge.customer {
@@ -1639,12 +1754,11 @@ impl WebhookHandler {
         };
 
         // Find org by customer ID
-        let org_id: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM organizations WHERE stripe_customer_id = $1"
-        )
-        .bind(&customer_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let org_id: Option<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM organizations WHERE stripe_customer_id = $1")
+                .bind(&customer_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         let org_id = match org_id {
             Some((id,)) => id,
@@ -1655,7 +1769,10 @@ impl WebhookHandler {
         };
 
         let amount_cents = charge.amount as i32;
-        let failure_message = charge.failure_message.clone().unwrap_or_else(|| "Unknown failure".to_string());
+        let failure_message = charge
+            .failure_message
+            .clone()
+            .unwrap_or_else(|| "Unknown failure".to_string());
         let failure_code = charge.failure_code.clone().map(|c| c.to_string());
 
         tracing::error!(
@@ -1668,17 +1785,21 @@ impl WebhookHandler {
         );
 
         // Log billing event
-        if let Err(e) = self.event_logger.log_event(
-            BillingEventBuilder::new(org_id, BillingEventType::PaymentFailed)
-                .data(serde_json::json!({
-                    "amount_cents": amount_cents,
-                    "failure_message": failure_message,
-                    "failure_code": failure_code,
-                    "charge_id": charge.id.to_string(),
-                }))
-                .stripe_event(&event_id)
-                .actor_type(ActorType::Stripe)
-        ).await {
+        if let Err(e) = self
+            .event_logger
+            .log_event(
+                BillingEventBuilder::new(org_id, BillingEventType::PaymentFailed)
+                    .data(serde_json::json!({
+                        "amount_cents": amount_cents,
+                        "failure_message": failure_message,
+                        "failure_code": failure_code,
+                        "charge_id": charge.id.to_string(),
+                    }))
+                    .stripe_event(&event_id)
+                    .actor_type(ActorType::Stripe),
+            )
+            .await
+        {
             tracing::warn!(error = %e, "Failed to log charge failed event");
         }
 
@@ -1692,7 +1813,10 @@ impl WebhookHandler {
                 self.pool.clone(),
                 self.email.clone(),
             );
-            if let Err(e) = instant_charge_service.mark_failed(&invoice_id, &failure_message).await {
+            if let Err(e) = instant_charge_service
+                .mark_failed(&invoice_id, &failure_message)
+                .await
+            {
                 tracing::error!(
                     invoice_id = %invoice_id,
                     failure_message = %failure_message,
@@ -1705,7 +1829,11 @@ impl WebhookHandler {
 
         // Send notification email to org owner
         if let Ok(Some((email, org_name))) = self.get_org_owner_email(org_id).await {
-            if let Err(e) = self.email.send_payment_failed(&email, &org_name, amount_cents, &failure_message).await {
+            if let Err(e) = self
+                .email
+                .send_payment_failed(&email, &org_name, amount_cents, &failure_message)
+                .await
+            {
                 tracing::error!(error = %e, "Failed to send payment failed email");
             }
         }
@@ -1718,7 +1846,11 @@ impl WebhookHandler {
         let event_id = event.id.to_string();
         let charge = match event.data.object {
             EventObject::Charge(charge) => charge,
-            _ => return Err(BillingError::WebhookEventNotSupported("Expected Charge".to_string())),
+            _ => {
+                return Err(BillingError::WebhookEventNotSupported(
+                    "Expected Charge".to_string(),
+                ))
+            }
         };
 
         let customer_id = match &charge.customer {
@@ -1731,12 +1863,11 @@ impl WebhookHandler {
         };
 
         // Find org by customer ID
-        let org_id: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM organizations WHERE stripe_customer_id = $1"
-        )
-        .bind(&customer_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let org_id: Option<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM organizations WHERE stripe_customer_id = $1")
+                .bind(&customer_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         let org_id = match org_id {
             Some((id,)) => id,
@@ -1760,17 +1891,21 @@ impl WebhookHandler {
         );
 
         // Log billing event
-        if let Err(e) = self.event_logger.log_event(
-            BillingEventBuilder::new(org_id, BillingEventType::RefundIssued)
-                .data(serde_json::json!({
-                    "amount_refunded_cents": amount_refunded,
-                    "total_amount_cents": total_amount,
-                    "is_full_refund": is_full_refund,
-                    "charge_id": charge.id.to_string(),
-                }))
-                .stripe_event(&event_id)
-                .actor_type(ActorType::Stripe)
-        ).await {
+        if let Err(e) = self
+            .event_logger
+            .log_event(
+                BillingEventBuilder::new(org_id, BillingEventType::RefundIssued)
+                    .data(serde_json::json!({
+                        "amount_refunded_cents": amount_refunded,
+                        "total_amount_cents": total_amount,
+                        "is_full_refund": is_full_refund,
+                        "charge_id": charge.id.to_string(),
+                    }))
+                    .stripe_event(&event_id)
+                    .actor_type(ActorType::Stripe),
+            )
+            .await
+        {
             tracing::warn!(error = %e, "Failed to log charge refunded event");
         }
 
@@ -1798,7 +1933,11 @@ impl WebhookHandler {
         let event_id = event.id.to_string();
         let dispute = match event.data.object {
             EventObject::Dispute(dispute) => dispute,
-            _ => return Err(BillingError::WebhookEventNotSupported("Expected Dispute".to_string())),
+            _ => {
+                return Err(BillingError::WebhookEventNotSupported(
+                    "Expected Dispute".to_string(),
+                ))
+            }
         };
 
         let charge_id = match &dispute.charge {
@@ -1829,8 +1968,10 @@ impl WebhookHandler {
             if let Ok(charge) = stripe::Charge::retrieve(
                 self.stripe.inner(),
                 &charge_id_str.parse().unwrap_or_default(),
-                &[]
-            ).await {
+                &[],
+            )
+            .await
+            {
                 if let Some(customer) = &charge.customer {
                     let customer_id = match customer {
                         stripe::Expandable::Id(id) => id.to_string(),
@@ -1838,11 +1979,12 @@ impl WebhookHandler {
                     };
 
                     if let Ok(Some((id,))) = sqlx::query_as::<_, (Uuid,)>(
-                        "SELECT id FROM organizations WHERE stripe_customer_id = $1"
+                        "SELECT id FROM organizations WHERE stripe_customer_id = $1",
                     )
                     .bind(&customer_id)
                     .fetch_optional(&self.pool)
-                    .await {
+                    .await
+                    {
                         // Record the dispute
                         sqlx::query(
                             r#"
@@ -1854,7 +1996,7 @@ impl WebhookHandler {
                             ON CONFLICT (stripe_dispute_id) DO UPDATE SET
                                 status = EXCLUDED.status,
                                 updated_at = NOW()
-                            "#
+                            "#,
                         )
                         .bind(id)
                         .bind(dispute.id.to_string())
@@ -1868,24 +2010,32 @@ impl WebhookHandler {
 
                         // Notify org owner about the dispute
                         if let Ok(Some((email, org_name))) = self.get_org_owner_email(id).await {
-                            if let Err(e) = self.email.send_dispute_alert(&email, &org_name, amount, &reason).await {
+                            if let Err(e) = self
+                                .email
+                                .send_dispute_alert(&email, &org_name, amount, &reason)
+                                .await
+                            {
                                 tracing::error!(error = %e, "Failed to send dispute alert email");
                             }
                         }
 
                         // Log billing event
-                        if let Err(e) = self.event_logger.log_event(
-                            BillingEventBuilder::new(id, BillingEventType::DisputeCreated)
-                                .data(serde_json::json!({
-                                    "amount_cents": amount,
-                                    "reason": reason,
-                                    "status": format!("{:?}", dispute.status),
-                                    "dispute_id": dispute.id.to_string(),
-                                    "charge_id": charge_id_str,
-                                }))
-                                .stripe_event(&event_id)
-                                .actor_type(ActorType::Stripe)
-                        ).await {
+                        if let Err(e) = self
+                            .event_logger
+                            .log_event(
+                                BillingEventBuilder::new(id, BillingEventType::DisputeCreated)
+                                    .data(serde_json::json!({
+                                        "amount_cents": amount,
+                                        "reason": reason,
+                                        "status": format!("{:?}", dispute.status),
+                                        "dispute_id": dispute.id.to_string(),
+                                        "charge_id": charge_id_str,
+                                    }))
+                                    .stripe_event(&event_id)
+                                    .actor_type(ActorType::Stripe),
+                            )
+                            .await
+                        {
                             tracing::warn!(error = %e, "Failed to log dispute created event");
                         }
 
@@ -1909,7 +2059,11 @@ impl WebhookHandler {
         let event_id = event.id.to_string();
         let payment_intent = match event.data.object {
             EventObject::PaymentIntent(pi) => pi,
-            _ => return Err(BillingError::WebhookEventNotSupported("Expected PaymentIntent".to_string())),
+            _ => {
+                return Err(BillingError::WebhookEventNotSupported(
+                    "Expected PaymentIntent".to_string(),
+                ))
+            }
         };
 
         let customer_id = match &payment_intent.customer {
@@ -1922,12 +2076,11 @@ impl WebhookHandler {
         };
 
         // Find org by customer ID
-        let org_id: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM organizations WHERE stripe_customer_id = $1"
-        )
-        .bind(&customer_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let org_id: Option<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM organizations WHERE stripe_customer_id = $1")
+                .bind(&customer_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         let org_id = match org_id {
             Some((id,)) => id,
@@ -1938,11 +2091,13 @@ impl WebhookHandler {
         };
 
         let amount = payment_intent.amount as i32;
-        let error_message = payment_intent.last_payment_error
+        let error_message = payment_intent
+            .last_payment_error
             .as_ref()
             .and_then(|e| e.message.clone())
             .unwrap_or_else(|| "Payment failed".to_string());
-        let error_code = payment_intent.last_payment_error
+        let error_code = payment_intent
+            .last_payment_error
             .as_ref()
             .and_then(|e| e.code.clone())
             .map(|c| c.to_string());
@@ -1957,23 +2112,31 @@ impl WebhookHandler {
         );
 
         // Log billing event
-        if let Err(e) = self.event_logger.log_event(
-            BillingEventBuilder::new(org_id, BillingEventType::PaymentFailed)
-                .data(serde_json::json!({
-                    "amount_cents": amount,
-                    "error_message": error_message,
-                    "error_code": error_code,
-                    "payment_intent_id": payment_intent.id.to_string(),
-                }))
-                .stripe_event(&event_id)
-                .actor_type(ActorType::Stripe)
-        ).await {
+        if let Err(e) = self
+            .event_logger
+            .log_event(
+                BillingEventBuilder::new(org_id, BillingEventType::PaymentFailed)
+                    .data(serde_json::json!({
+                        "amount_cents": amount,
+                        "error_message": error_message,
+                        "error_code": error_code,
+                        "payment_intent_id": payment_intent.id.to_string(),
+                    }))
+                    .stripe_event(&event_id)
+                    .actor_type(ActorType::Stripe),
+            )
+            .await
+        {
             tracing::warn!(error = %e, "Failed to log payment intent failed event");
         }
 
         // Send notification to org owner
         if let Ok(Some((email, org_name))) = self.get_org_owner_email(org_id).await {
-            if let Err(e) = self.email.send_payment_failed(&email, &org_name, amount, &error_message).await {
+            if let Err(e) = self
+                .email
+                .send_payment_failed(&email, &org_name, amount, &error_message)
+                .await
+            {
                 tracing::error!(error = %e, "Failed to send payment intent failed email");
             }
         }
@@ -1988,7 +2151,8 @@ impl WebhookHandler {
         let customer = self.extract_customer(event)?;
 
         // Try to link customer to org via metadata
-        let org_id = customer.metadata
+        let org_id = customer
+            .metadata
             .as_ref()
             .and_then(|m| m.get("org_id"))
             .and_then(|id| Uuid::parse_str(id).ok());
@@ -2013,15 +2177,19 @@ impl WebhookHandler {
             }
 
             // Log billing event
-            if let Err(e) = self.event_logger.log_event(
-                BillingEventBuilder::new(org_id, BillingEventType::CustomerCreated)
-                    .data(serde_json::json!({
-                        "customer_id": customer.id.to_string(),
-                        "email": customer.email,
-                    }))
-                    .stripe_event(&event_id)
-                    .actor_type(ActorType::Stripe)
-            ).await {
+            if let Err(e) = self
+                .event_logger
+                .log_event(
+                    BillingEventBuilder::new(org_id, BillingEventType::CustomerCreated)
+                        .data(serde_json::json!({
+                            "customer_id": customer.id.to_string(),
+                            "email": customer.email,
+                        }))
+                        .stripe_event(&event_id)
+                        .actor_type(ActorType::Stripe),
+                )
+                .await
+            {
                 tracing::warn!(error = %e, "Failed to log customer created event");
             }
 
@@ -2046,26 +2214,29 @@ impl WebhookHandler {
         let customer = self.extract_customer(event)?;
 
         // Find org by customer ID
-        let org_id: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM organizations WHERE stripe_customer_id = $1"
-        )
-        .bind(customer.id.to_string())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| BillingError::Database(e.to_string()))?;
+        let org_id: Option<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM organizations WHERE stripe_customer_id = $1")
+                .bind(customer.id.to_string())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| BillingError::Database(e.to_string()))?;
 
         if let Some((org_id,)) = org_id {
             // Log billing event for customer updates
-            if let Err(e) = self.event_logger.log_event(
-                BillingEventBuilder::new(org_id, BillingEventType::CustomerUpdated)
-                    .data(serde_json::json!({
-                        "customer_id": customer.id.to_string(),
-                        "email": customer.email,
-                        "delinquent": customer.delinquent,
-                    }))
-                    .stripe_event(&event_id)
-                    .actor_type(ActorType::Stripe)
-            ).await {
+            if let Err(e) = self
+                .event_logger
+                .log_event(
+                    BillingEventBuilder::new(org_id, BillingEventType::CustomerUpdated)
+                        .data(serde_json::json!({
+                            "customer_id": customer.id.to_string(),
+                            "email": customer.email,
+                            "delinquent": customer.delinquent,
+                        }))
+                        .stripe_event(&event_id)
+                        .actor_type(ActorType::Stripe),
+                )
+                .await
+            {
                 tracing::warn!(error = %e, "Failed to log customer updated event");
             }
 
@@ -2093,13 +2264,12 @@ impl WebhookHandler {
         let customer = self.extract_customer(event)?;
 
         // Find org by customer ID
-        let org_id: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM organizations WHERE stripe_customer_id = $1"
-        )
-        .bind(customer.id.to_string())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| BillingError::Database(e.to_string()))?;
+        let org_id: Option<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM organizations WHERE stripe_customer_id = $1")
+                .bind(customer.id.to_string())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| BillingError::Database(e.to_string()))?;
 
         if let Some((org_id,)) = org_id {
             // Clear the Stripe customer ID from org (customer was deleted in Stripe)
@@ -2112,14 +2282,18 @@ impl WebhookHandler {
             .map_err(|e| BillingError::Database(e.to_string()))?;
 
             // Log billing event
-            if let Err(e) = self.event_logger.log_event(
-                BillingEventBuilder::new(org_id, BillingEventType::CustomerDeleted)
-                    .data(serde_json::json!({
-                        "customer_id": customer.id.to_string(),
-                    }))
-                    .stripe_event(&event_id)
-                    .actor_type(ActorType::Stripe)
-            ).await {
+            if let Err(e) = self
+                .event_logger
+                .log_event(
+                    BillingEventBuilder::new(org_id, BillingEventType::CustomerDeleted)
+                        .data(serde_json::json!({
+                            "customer_id": customer.id.to_string(),
+                        }))
+                        .stripe_event(&event_id)
+                        .actor_type(ActorType::Stripe),
+                )
+                .await
+            {
                 tracing::warn!(error = %e, "Failed to log customer deleted event");
             }
 
@@ -2137,7 +2311,7 @@ impl WebhookHandler {
         match event.data.object {
             EventObject::Customer(customer) => Ok(customer),
             _ => Err(BillingError::WebhookEventNotSupported(
-                "Expected Customer".to_string()
+                "Expected Customer".to_string(),
             )),
         }
     }
@@ -2159,7 +2333,7 @@ impl WebhookHandler {
             WHERE processing_result IN ('error', 'processing')
             ORDER BY created_at DESC
             LIMIT $1 OFFSET $2
-            "#
+            "#,
         )
         .bind(limit)
         .bind(offset)
@@ -2178,9 +2352,8 @@ impl WebhookHandler {
         offset: i64,
     ) -> BillingResult<Vec<WebhookEventRecord>> {
         let records: Vec<WebhookEventRecord> = match status_filter {
-            Some(status) => {
-                sqlx::query_as(
-                    r#"
+            Some(status) => sqlx::query_as(
+                r#"
                     SELECT id, stripe_event_id, event_type, event_timestamp,
                            processing_result, processing_started_at, error_message,
                            created_at
@@ -2188,32 +2361,29 @@ impl WebhookHandler {
                     WHERE processing_result = $1
                     ORDER BY created_at DESC
                     LIMIT $2 OFFSET $3
-                    "#
-                )
-                .bind(status)
-                .bind(limit)
-                .bind(offset)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|e| BillingError::Database(e.to_string()))?
-            }
-            None => {
-                sqlx::query_as(
-                    r#"
+                    "#,
+            )
+            .bind(status)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| BillingError::Database(e.to_string()))?,
+            None => sqlx::query_as(
+                r#"
                     SELECT id, stripe_event_id, event_type, event_timestamp,
                            processing_result, processing_started_at, error_message,
                            created_at
                     FROM stripe_webhook_events
                     ORDER BY created_at DESC
                     LIMIT $1 OFFSET $2
-                    "#
-                )
-                .bind(limit)
-                .bind(offset)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|e| BillingError::Database(e.to_string()))?
-            }
+                    "#,
+            )
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| BillingError::Database(e.to_string()))?,
         };
 
         Ok(records)
@@ -2225,7 +2395,10 @@ impl WebhookHandler {
     /// - Recovering from transient errors
     /// - Testing after fixing bugs
     /// - Manual intervention after failed processing
-    pub async fn replay_webhook(&self, stripe_event_id: &str) -> BillingResult<WebhookReplayResult> {
+    pub async fn replay_webhook(
+        &self,
+        stripe_event_id: &str,
+    ) -> BillingResult<WebhookReplayResult> {
         tracing::info!(
             stripe_event_id = %stripe_event_id,
             "Attempting to replay webhook event"
@@ -2237,23 +2410,30 @@ impl WebhookHandler {
             SELECT id, processing_result, error_message
             FROM stripe_webhook_events
             WHERE stripe_event_id = $1
-            "#
+            "#,
         )
         .bind(stripe_event_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| BillingError::Database(e.to_string()))?;
 
-        let (record_id, previous_status, previous_error) = existing
-            .ok_or_else(|| BillingError::NotFound(format!("Webhook event {} not found in database", stripe_event_id)))?;
+        let (record_id, previous_status, previous_error) = existing.ok_or_else(|| {
+            BillingError::NotFound(format!(
+                "Webhook event {} not found in database",
+                stripe_event_id
+            ))
+        })?;
 
         // Fetch the event from Stripe
-        let event_id = stripe_event_id.parse::<stripe::EventId>()
+        let event_id = stripe_event_id
+            .parse::<stripe::EventId>()
             .map_err(|e| BillingError::InvalidInput(format!("Invalid event ID: {}", e)))?;
 
         let event = stripe::Event::retrieve(self.stripe.inner(), &event_id, &[])
             .await
-            .map_err(|e| BillingError::StripeApi(format!("Failed to fetch event from Stripe: {}", e)))?;
+            .map_err(|e| {
+                BillingError::StripeApi(format!("Failed to fetch event from Stripe: {}", e))
+            })?;
 
         // Mark as replaying
         sqlx::query(
@@ -2287,7 +2467,7 @@ impl WebhookHandler {
             SET processing_result = $1,
                 error_message = $2
             WHERE stripe_event_id = $3
-            "#
+            "#,
         )
         .bind(&new_status)
         .bind(&new_error)
@@ -2317,7 +2497,10 @@ impl WebhookHandler {
     }
 
     /// Replay all failed webhooks (with optional limit)
-    pub async fn replay_all_failed(&self, max_events: Option<i64>) -> BillingResult<Vec<WebhookReplayResult>> {
+    pub async fn replay_all_failed(
+        &self,
+        max_events: Option<i64>,
+    ) -> BillingResult<Vec<WebhookReplayResult>> {
         let limit = max_events.unwrap_or(100);
 
         let failed_events: Vec<(String,)> = sqlx::query_as(
@@ -2327,7 +2510,7 @@ impl WebhookHandler {
             WHERE processing_result = 'error'
             ORDER BY created_at ASC
             LIMIT $1
-            "#
+            "#,
         )
         .bind(limit)
         .fetch_all(&self.pool)
@@ -2371,7 +2554,7 @@ impl WebhookHandler {
                 error_message = CONCAT('Reset for replay at ', NOW()::TEXT)
             WHERE stripe_event_id = $1
               AND processing_result IN ('processing', 'error')
-            "#
+            "#,
         )
         .bind(stripe_event_id)
         .execute(&self.pool)
@@ -2379,9 +2562,10 @@ impl WebhookHandler {
         .map_err(|e| BillingError::Database(e.to_string()))?;
 
         if result.rows_affected() == 0 {
-            return Err(BillingError::NotFound(
-                format!("Webhook {} not found or not in resettable state", stripe_event_id)
-            ));
+            return Err(BillingError::NotFound(format!(
+                "Webhook {} not found or not in resettable state",
+                stripe_event_id
+            )));
         }
 
         tracing::info!(

@@ -126,7 +126,7 @@ struct StdioProcess {
 
 impl McpClient {
     /// Create a new MCP client
-    #[allow(clippy::expect_used)]  // HTTP client creation failure is a fatal system error
+    #[allow(clippy::expect_used)] // HTTP client creation failure is a fatal system error
     pub fn new() -> Self {
         let http_client = Client::builder()
             .timeout(REQUEST_TIMEOUT)
@@ -134,9 +134,10 @@ impl McpClient {
             .build()
             .expect("Failed to create HTTP client");
 
-        let circuit_breakers = Arc::new(crate::mcp::circuit_breaker::McpCircuitBreakerManager::new(
-            crate::mcp::circuit_breaker::CircuitBreakerConfig::default()
-        ));
+        let circuit_breakers =
+            Arc::new(crate::mcp::circuit_breaker::McpCircuitBreakerManager::new(
+                crate::mcp::circuit_breaker::CircuitBreakerConfig::default(),
+            ));
 
         Self {
             http_client,
@@ -147,11 +148,7 @@ impl McpClient {
     }
 
     /// Initialize an HTTP MCP session and return the session ID
-    pub async fn init_http_session(
-        &self,
-        endpoint_url: &str,
-        auth: &McpAuth,
-    ) -> McpResult<String> {
+    pub async fn init_http_session(&self, endpoint_url: &str, auth: &McpAuth) -> McpResult<String> {
         let init_request = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(JsonRpcId::Number(1)),
@@ -295,10 +292,7 @@ impl McpClient {
     }
 
     /// Handle SSE response stream
-    async fn handle_sse_response(
-        &self,
-        response: reqwest::Response,
-    ) -> McpResult<JsonRpcResponse> {
+    async fn handle_sse_response(&self, response: reqwest::Response) -> McpResult<JsonRpcResponse> {
         let text = response.text().await?;
 
         // Parse SSE events - look for the final result
@@ -426,7 +420,8 @@ impl McpClient {
 
         let read_result = tokio::time::timeout(REQUEST_TIMEOUT, async {
             process.stdout.read_line(&mut response_line).await
-        }).await;
+        })
+        .await;
 
         let bytes_read = match read_result {
             Ok(Ok(n)) => n,
@@ -439,7 +434,7 @@ impl McpClient {
 
                 if let Some(mut proc) = removed {
                     let _ = proc.child.kill().await;
-                    let _ = proc.child.wait().await;  // REAP ZOMBIE
+                    let _ = proc.child.wait().await; // REAP ZOMBIE
                 }
 
                 return Err(McpClientError::from(e));
@@ -453,7 +448,7 @@ impl McpClient {
 
                 if let Some(mut proc) = removed {
                     let _ = proc.child.kill().await;
-                    let _ = proc.child.wait().await;  // REAP ZOMBIE
+                    let _ = proc.child.wait().await; // REAP ZOMBIE
                 }
 
                 return Err(McpClientError::Timeout);
@@ -468,7 +463,7 @@ impl McpClient {
             drop(processes);
 
             if let Some(mut proc) = removed {
-                let _ = proc.child.wait().await;  // REAP ZOMBIE
+                let _ = proc.child.wait().await; // REAP ZOMBIE
             }
 
             return Err(McpClientError::InvalidResponse);
@@ -499,17 +494,14 @@ impl McpClient {
             })?),
         };
 
-        let response = self
-            .send_request(transport, mcp_id, &request)
-            .await?;
+        let response = self.send_request(transport, mcp_id, &request).await?;
 
         if let Some(error) = response.error {
             return Err(McpClientError::McpError(error.message));
         }
 
-        let result: InitializeResult = serde_json::from_value(
-            response.result.ok_or(McpClientError::InvalidResponse)?,
-        )?;
+        let result: InitializeResult =
+            serde_json::from_value(response.result.ok_or(McpClientError::InvalidResponse)?)?;
 
         // Send initialized notification
         let notification = JsonRpcRequest {
@@ -572,15 +564,20 @@ impl McpClient {
         let mcp_id_str = mcp_id_str.to_string();
         let request = request.clone();
 
-        let result = self.circuit_breakers.call(mcp_id, || async {
-            self.send_request(&transport, &mcp_id_str, &request).await
-        }).await;
+        let result = self
+            .circuit_breakers
+            .call(mcp_id, || async {
+                self.send_request(&transport, &mcp_id_str, &request).await
+            })
+            .await;
 
         match result {
             Ok(response) => Ok(response),
             Err(CircuitBreakerError::Rejected) => {
                 tracing::warn!(mcp_id = %mcp_id, "Circuit breaker OPEN - request rejected");
-                Err(McpClientError::McpError("Circuit breaker is OPEN (too many recent failures)".to_string()))
+                Err(McpClientError::McpError(
+                    "Circuit breaker is OPEN (too many recent failures)".to_string(),
+                ))
             }
             Err(CircuitBreakerError::Inner(err)) => Err(err),
         }
@@ -598,7 +595,7 @@ impl McpClient {
         mcp_id_str: &str,
         request: &JsonRpcRequest,
     ) -> McpResult<JsonRpcResponse> {
-        use tokio_retry::strategy::{ExponentialBackoff, jitter};
+        use tokio_retry::strategy::{jitter, ExponentialBackoff};
         use tokio_retry::Retry;
 
         // Create exponential backoff strategy with jitter
@@ -612,12 +609,9 @@ impl McpClient {
         let request = request.clone();
 
         Retry::spawn(retry_strategy, || async {
-            let result = self.send_request_with_breaker(
-                mcp_id,
-                &transport,
-                &mcp_id_str,
-                &request,
-            ).await;
+            let result = self
+                .send_request_with_breaker(mcp_id, &transport, &mcp_id_str, &request)
+                .await;
 
             match &result {
                 Ok(_) => Ok(result),
@@ -627,7 +621,7 @@ impl McpClient {
                         error = %e,
                         "Transient error - will retry"
                     );
-                    Err(result)  // Return error to trigger retry
+                    Err(result) // Return error to trigger retry
                 }
                 Err(e) => {
                     tracing::debug!(
@@ -635,20 +629,16 @@ impl McpClient {
                         error = %e,
                         "Permanent error - will not retry"
                     );
-                    Ok(result)  // Return error wrapped in Ok to stop retrying
+                    Ok(result) // Return error wrapped in Ok to stop retrying
                 }
             }
         })
         .await
-        .unwrap_or_else(|e| e)  // Extract the inner result
+        .unwrap_or_else(|e| e) // Extract the inner result
     }
 
     /// Get tools from an upstream MCP
-    pub async fn get_tools(
-        &self,
-        transport: &McpTransport,
-        mcp_id: &str,
-    ) -> McpResult<Vec<Tool>> {
+    pub async fn get_tools(&self, transport: &McpTransport, mcp_id: &str) -> McpResult<Vec<Tool>> {
         let request = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             id: Some(JsonRpcId::Number(1)),
@@ -662,9 +652,8 @@ impl McpClient {
             return Err(McpClientError::McpError(error.message));
         }
 
-        let result: ToolsListResult = serde_json::from_value(
-            response.result.ok_or(McpClientError::InvalidResponse)?,
-        )?;
+        let result: ToolsListResult =
+            serde_json::from_value(response.result.ok_or(McpClientError::InvalidResponse)?)?;
 
         Ok(result.tools)
     }
@@ -693,9 +682,8 @@ impl McpClient {
             return Err(McpClientError::McpError(error.message));
         }
 
-        let result: ToolCallResult = serde_json::from_value(
-            response.result.ok_or(McpClientError::InvalidResponse)?,
-        )?;
+        let result: ToolCallResult =
+            serde_json::from_value(response.result.ok_or(McpClientError::InvalidResponse)?)?;
 
         Ok(result)
     }
@@ -719,9 +707,8 @@ impl McpClient {
             return Err(McpClientError::McpError(error.message));
         }
 
-        let result: ResourcesListResult = serde_json::from_value(
-            response.result.ok_or(McpClientError::InvalidResponse)?,
-        )?;
+        let result: ResourcesListResult =
+            serde_json::from_value(response.result.ok_or(McpClientError::InvalidResponse)?)?;
 
         Ok(result.resources)
     }
@@ -748,9 +735,8 @@ impl McpClient {
             return Err(McpClientError::McpError(error.message));
         }
 
-        let result: ResourceReadResult = serde_json::from_value(
-            response.result.ok_or(McpClientError::InvalidResponse)?,
-        )?;
+        let result: ResourceReadResult =
+            serde_json::from_value(response.result.ok_or(McpClientError::InvalidResponse)?)?;
 
         Ok(result)
     }
@@ -774,9 +760,8 @@ impl McpClient {
             return Err(McpClientError::McpError(error.message));
         }
 
-        let result: PromptsListResult = serde_json::from_value(
-            response.result.ok_or(McpClientError::InvalidResponse)?,
-        )?;
+        let result: PromptsListResult =
+            serde_json::from_value(response.result.ok_or(McpClientError::InvalidResponse)?)?;
 
         Ok(result.prompts)
     }
@@ -805,9 +790,8 @@ impl McpClient {
             return Err(McpClientError::McpError(error.message));
         }
 
-        let result: PromptGetResult = serde_json::from_value(
-            response.result.ok_or(McpClientError::InvalidResponse)?,
-        )?;
+        let result: PromptGetResult =
+            serde_json::from_value(response.result.ok_or(McpClientError::InvalidResponse)?)?;
 
         Ok(result)
     }
@@ -830,15 +814,16 @@ impl McpClient {
             params: Some(serde_json::json!({})),
         };
 
-        let response = self.send_request_with_retry(mcp_id, transport, mcp_id_str, &request).await?;
+        let response = self
+            .send_request_with_retry(mcp_id, transport, mcp_id_str, &request)
+            .await?;
 
         if let Some(error) = response.error {
             return Err(McpClientError::McpError(error.message));
         }
 
-        let result: ToolsListResult = serde_json::from_value(
-            response.result.ok_or(McpClientError::InvalidResponse)?,
-        )?;
+        let result: ToolsListResult =
+            serde_json::from_value(response.result.ok_or(McpClientError::InvalidResponse)?)?;
 
         Ok(result.tools)
     }
@@ -857,15 +842,16 @@ impl McpClient {
             params: Some(serde_json::json!({})),
         };
 
-        let response = self.send_request_with_retry(mcp_id, transport, mcp_id_str, &request).await?;
+        let response = self
+            .send_request_with_retry(mcp_id, transport, mcp_id_str, &request)
+            .await?;
 
         if let Some(error) = response.error {
             return Err(McpClientError::McpError(error.message));
         }
 
-        let result: ResourcesListResult = serde_json::from_value(
-            response.result.ok_or(McpClientError::InvalidResponse)?,
-        )?;
+        let result: ResourcesListResult =
+            serde_json::from_value(response.result.ok_or(McpClientError::InvalidResponse)?)?;
 
         Ok(result.resources)
     }
@@ -884,15 +870,16 @@ impl McpClient {
             params: Some(serde_json::json!({})),
         };
 
-        let response = self.send_request_with_retry(mcp_id, transport, mcp_id_str, &request).await?;
+        let response = self
+            .send_request_with_retry(mcp_id, transport, mcp_id_str, &request)
+            .await?;
 
         if let Some(error) = response.error {
             return Err(McpClientError::McpError(error.message));
         }
 
-        let result: PromptsListResult = serde_json::from_value(
-            response.result.ok_or(McpClientError::InvalidResponse)?,
-        )?;
+        let result: PromptsListResult =
+            serde_json::from_value(response.result.ok_or(McpClientError::InvalidResponse)?)?;
 
         Ok(result.prompts)
     }
@@ -910,10 +897,9 @@ impl McpClient {
             drop(process.stdin);
 
             // Wait up to 5 seconds for graceful exit
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                process.child.wait()
-            ).await {
+            match tokio::time::timeout(std::time::Duration::from_secs(5), process.child.wait())
+                .await
+            {
                 Ok(Ok(status)) => {
                     tracing::info!("Process {} exited gracefully: {:?}", mcp_id, status);
                 }
@@ -924,7 +910,7 @@ impl McpClient {
                     // Timeout - force kill
                     tracing::warn!("Killing unresponsive process {}", mcp_id);
                     let _ = process.child.kill().await;
-                    let _ = process.child.wait().await;  // REAP ZOMBIE
+                    let _ = process.child.wait().await; // REAP ZOMBIE
                 }
             }
         }

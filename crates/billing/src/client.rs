@@ -68,8 +68,9 @@ impl StripeConfig {
                     .map_err(|_| BillingError::Config("STRIPE_PRICE_PRO not set".to_string()))?,
                 team: std::env::var("STRIPE_PRICE_TEAM")
                     .map_err(|_| BillingError::Config("STRIPE_PRICE_TEAM not set".to_string()))?,
-                enterprise: std::env::var("STRIPE_PRICE_ENTERPRISE")
-                    .map_err(|_| BillingError::Config("STRIPE_PRICE_ENTERPRISE not set".to_string()))?,
+                enterprise: std::env::var("STRIPE_PRICE_ENTERPRISE").map_err(|_| {
+                    BillingError::Config("STRIPE_PRICE_ENTERPRISE not set".to_string())
+                })?,
 
                 // Annual tiers (optional)
                 pro_annual: std::env::var("STRIPE_PRICE_PRO_ANNUAL").ok(),

@@ -232,7 +232,7 @@ impl EntitlementService {
             LEFT JOIN subscriptions s ON s.org_id = o.id
             LEFT JOIN spend_caps sc ON sc.org_id = o.id
             WHERE o.id = $1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
@@ -291,7 +291,13 @@ impl EntitlementService {
         raw: &RawBillingData,
         tier: &SubscriptionTier,
         now: OffsetDateTime,
-    ) -> (EntitlementState, EntitlementSource, Option<OffsetDateTime>, bool, Option<String>) {
+    ) -> (
+        EntitlementState,
+        EntitlementSource,
+        Option<OffsetDateTime>,
+        bool,
+        Option<String>,
+    ) {
         // Check if billing is blocked (admin action)
         if raw.billing_blocked_at.is_some() {
             return (
@@ -420,16 +426,14 @@ impl EntitlementService {
             FROM organizations o
             LEFT JOIN spend_caps sc ON sc.org_id = o.id
             WHERE o.id = $1
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_optional(&self.pool)
         .await?;
 
         match blocked {
-            Some((is_paused, billing_blocked)) => {
-                Ok(!is_paused && billing_blocked.is_none())
-            }
+            Some((is_paused, billing_blocked)) => Ok(!is_paused && billing_blocked.is_none()),
             None => Ok(false), // Org not found
         }
     }

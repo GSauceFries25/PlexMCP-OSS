@@ -8,7 +8,9 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use argon2::{
-    password_hash::{rand_core::RngCore, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{
+        rand_core::RngCore, PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
+    },
     Argon2,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -127,7 +129,7 @@ pub fn verify_code(secret: &str, code: &str, email: &str) -> Result<bool, TotpEr
     // skew=1 means we check time-30s, time, time+30s
     let time_steps = [
         current_time.saturating_sub(TOTP_STEP), // Previous window
-        current_time,                             // Current window
+        current_time,                           // Current window
         current_time.saturating_add(TOTP_STEP), // Next window
     ];
 
@@ -138,9 +140,7 @@ pub fn verify_code(secret: &str, code: &str, email: &str) -> Result<bool, TotpEr
         let expected_code = totp.generate(time_step);
         // Constant-time comparison to prevent timing attacks
         let expected_bytes = expected_code.as_bytes();
-        if code_bytes.len() == expected_bytes.len()
-            && code_bytes.ct_eq(expected_bytes).into()
-        {
+        if code_bytes.len() == expected_bytes.len() && code_bytes.ct_eq(expected_bytes).into() {
             return Ok(true);
         }
     }
@@ -245,7 +245,10 @@ pub fn verify_backup_code(code: &str, hash: &str) -> Result<bool, TotpError> {
 
 /// Encrypt a TOTP secret for database storage
 /// Returns (encrypted_base64, nonce_base64)
-pub fn encrypt_secret(secret: &str, encryption_key: &[u8; 32]) -> Result<(String, String), TotpError> {
+pub fn encrypt_secret(
+    secret: &str,
+    encryption_key: &[u8; 32],
+) -> Result<(String, String), TotpError> {
     let cipher = Aes256Gcm::new_from_slice(encryption_key).map_err(|_| TotpError::InvalidKey)?;
 
     // Generate random nonce
@@ -270,8 +273,12 @@ pub fn decrypt_secret(
     let cipher = Aes256Gcm::new_from_slice(encryption_key).map_err(|_| TotpError::InvalidKey)?;
 
     // Decode from base64
-    let ciphertext = BASE64.decode(encrypted_b64).map_err(|_| TotpError::Decryption)?;
-    let nonce_bytes = BASE64.decode(nonce_b64).map_err(|_| TotpError::Decryption)?;
+    let ciphertext = BASE64
+        .decode(encrypted_b64)
+        .map_err(|_| TotpError::Decryption)?;
+    let nonce_bytes = BASE64
+        .decode(nonce_b64)
+        .map_err(|_| TotpError::Decryption)?;
 
     let nonce = Nonce::from_slice(&nonce_bytes);
 
@@ -302,7 +309,7 @@ pub fn generate_token() -> String {
 
 /// Hash a token for secure storage
 pub fn hash_token(token: &str) -> String {
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(token.as_bytes());
     hex::encode(hasher.finalize())
@@ -359,7 +366,7 @@ pub fn parse_device_name(user_agent: &str) -> String {
 // =============================================================================
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]  // Allow unwrap() in tests for cleaner test code
+#[allow(clippy::unwrap_used)] // Allow unwrap() in tests for cleaner test code
 mod tests {
     use super::*;
 
@@ -420,9 +427,13 @@ mod tests {
             assert_eq!(code.len(), 11);
             assert_eq!(&code[5..6], "-");
             // First 5 chars should be alphanumeric lowercase
-            assert!(code[..5].chars().all(|c| c.is_ascii_alphanumeric() && !c.is_uppercase()));
+            assert!(code[..5]
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() && !c.is_uppercase()));
             // Last 5 chars should be alphanumeric lowercase
-            assert!(code[6..].chars().all(|c| c.is_ascii_alphanumeric() && !c.is_uppercase()));
+            assert!(code[6..]
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() && !c.is_uppercase()));
         }
     }
 

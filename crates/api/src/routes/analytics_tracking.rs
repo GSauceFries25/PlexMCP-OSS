@@ -8,13 +8,13 @@ use axum::{
     http::{header, HeaderMap, StatusCode},
     Json,
 };
+use maxminddb::{geoip2, Reader};
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use sqlx::{FromRow, Row};
+use std::{net::IpAddr, sync::Arc};
 use time::OffsetDateTime;
 use uuid::Uuid;
-use maxminddb::{geoip2, Reader};
-use std::{net::IpAddr, sync::Arc};
 
 use crate::{
     auth::AuthUser,
@@ -28,9 +28,9 @@ use crate::{
 // =============================================================================
 
 mod timestamp_format {
-    use serde::{Serializer, Deserializer, Serialize, Deserialize};
-    use time::OffsetDateTime;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use time::format_description::well_known::Rfc3339;
+    use time::OffsetDateTime;
 
     pub fn serialize<S>(dt: &OffsetDateTime, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -46,15 +46,14 @@ mod timestamp_format {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        OffsetDateTime::parse(&s, &Rfc3339)
-            .map_err(serde::de::Error::custom)
+        OffsetDateTime::parse(&s, &Rfc3339).map_err(serde::de::Error::custom)
     }
 }
 
 mod optional_timestamp_format {
-    use serde::{Serializer, Deserializer, Deserialize};
-    use time::OffsetDateTime;
+    use serde::{Deserialize, Deserializer, Serializer};
     use time::format_description::well_known::Rfc3339;
+    use time::OffsetDateTime;
 
     pub fn serialize<S>(dt: &Option<OffsetDateTime>, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -62,8 +61,7 @@ mod optional_timestamp_format {
     {
         match dt {
             Some(dt) => {
-                let formatted = dt.format(&Rfc3339)
-                    .map_err(serde::ser::Error::custom)?;
+                let formatted = dt.format(&Rfc3339).map_err(serde::ser::Error::custom)?;
                 serializer.serialize_some(&formatted)
             }
             None => serializer.serialize_none(),
@@ -75,8 +73,7 @@ mod optional_timestamp_format {
         D: Deserializer<'de>,
     {
         let opt = Option::<String>::deserialize(deserializer)?;
-        opt.map(|s| OffsetDateTime::parse(&s, &Rfc3339)
-            .map_err(serde::de::Error::custom))
+        opt.map(|s| OffsetDateTime::parse(&s, &Rfc3339).map_err(serde::de::Error::custom))
             .transpose()
     }
 }
@@ -310,15 +307,23 @@ fn parse_date_range(query: &AnalyticsQuery) -> (OffsetDateTime, OffsetDateTime, 
     let now = OffsetDateTime::now_utc();
 
     // Parse end date or use now
-    let end = query.end.as_ref()
-        .and_then(|s| time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok())
+    let end = query
+        .end
+        .as_ref()
+        .and_then(|s| {
+            time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok()
+        })
         .and_then(|d| d.with_hms(23, 59, 59).ok())
         .map(|dt| dt.assume_utc())
         .unwrap_or(now);
 
     // Parse start date or default to 30 days before end
-    let start = query.start.as_ref()
-        .and_then(|s| time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok())
+    let start = query
+        .start
+        .as_ref()
+        .and_then(|s| {
+            time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok()
+        })
         .and_then(|d| d.with_hms(0, 0, 0).ok())
         .map(|dt| dt.assume_utc())
         .unwrap_or(end - time::Duration::days(30));
@@ -339,11 +344,16 @@ fn parse_user_agent(ua: &str) -> (String, Option<String>, Option<String>) {
     let ua_lower = ua.to_lowercase();
 
     // Device type
-    let device_type = if ua_lower.contains("mobile") || ua_lower.contains("android") && !ua_lower.contains("tablet") {
+    let device_type = if ua_lower.contains("mobile")
+        || ua_lower.contains("android") && !ua_lower.contains("tablet")
+    {
         "mobile"
     } else if ua_lower.contains("tablet") || ua_lower.contains("ipad") {
         "tablet"
-    } else if ua_lower.contains("bot") || ua_lower.contains("crawler") || ua_lower.contains("spider") {
+    } else if ua_lower.contains("bot")
+        || ua_lower.contains("crawler")
+        || ua_lower.contains("spider")
+    {
         "bot"
     } else {
         "desktop"
@@ -514,7 +524,8 @@ fn geolocate_ip(
     };
 
     let country_code = city.country.iso_code.map(|s| s.to_string());
-    let region_code = city.subdivisions
+    let region_code = city
+        .subdivisions
         .first()
         .and_then(|sub| sub.iso_code.map(|s| s.to_string()));
 
@@ -525,12 +536,11 @@ fn geolocate_ip(
 async fn require_admin(pool: &sqlx::PgPool, auth_user: &AuthUser) -> ApiResult<()> {
     let user_id = auth_user.user_id.ok_or(ApiError::Unauthorized)?;
 
-    let role: Option<(String,)> = sqlx::query_as(
-        "SELECT platform_role::TEXT FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let role: Option<(String,)> =
+        sqlx::query_as("SELECT platform_role::TEXT FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
 
     match role.map(|r| r.0).unwrap_or_default().as_str() {
         "superadmin" | "admin" | "staff" => Ok(()),
@@ -566,7 +576,8 @@ pub async fn collect(
     .ok()
     .flatten();
 
-    let (respect_dnt, filter_bots, _anonymize_ip, bot_detection_enabled, exclude_admin_visits) = settings.unwrap_or((true, true, true, true, true));
+    let (respect_dnt, filter_bots, _anonymize_ip, bot_detection_enabled, exclude_admin_visits) =
+        settings.unwrap_or((true, true, true, true, true));
 
     // Check Do Not Track header
     if respect_dnt {
@@ -585,14 +596,13 @@ pub async fn collect(
     let (is_admin, admin_user_id) = if let Some(Extension(auth)) = auth_user {
         if let Some(user_id) = auth.user_id {
             // Check if user has admin/superadmin/staff role
-            let role: Option<(String,)> = sqlx::query_as(
-                "SELECT platform_role::TEXT FROM users WHERE id = $1"
-            )
-            .bind(user_id)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
+            let role: Option<(String,)> =
+                sqlx::query_as("SELECT platform_role::TEXT FROM users WHERE id = $1")
+                    .bind(user_id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .ok()
+                    .flatten();
 
             let is_admin = matches!(
                 role.map(|r| r.0).as_deref(),
@@ -696,7 +706,7 @@ pub async fn collect(
                 exit_page = $2,
                 is_bounce = false
             WHERE id = $1
-            "#
+            "#,
         )
         .bind(session.id)
         .bind(&url_path)
@@ -839,7 +849,7 @@ pub async fn get_realtime(
         FROM analytics_realtime
         ORDER BY last_activity_at DESC
         LIMIT 100
-        "#
+        "#,
     )
     .fetch_all(&state.pool)
     .await?;
@@ -848,13 +858,16 @@ pub async fn get_realtime(
 
     Ok(Json(RealtimeResponse {
         active_visitors: active_count,
-        visitors: visitors.into_iter().map(|v| RealtimeVisitor {
-            session_id: v.session_id,
-            current_page: v.current_page.unwrap_or_default(),
-            country_code: v.country_code,
-            device_type: v.device_type,
-            last_activity_at: v.last_activity_at,
-        }).collect(),
+        visitors: visitors
+            .into_iter()
+            .map(|v| RealtimeVisitor {
+                session_id: v.session_id,
+                current_page: v.current_page.unwrap_or_default(),
+                country_code: v.country_code,
+                device_type: v.device_type,
+                last_activity_at: v.last_activity_at,
+            })
+            .collect(),
     }))
 }
 
@@ -907,7 +920,7 @@ pub async fn get_overview(
                AND s.duration_seconds IS NOT NULL
                AND v.is_bot = false
                AND v.is_admin = false)::bigint as avg_duration
-        "#
+        "#,
     )
     .fetch_one(&state.pool)
     .await?;
@@ -953,7 +966,7 @@ pub async fn get_top_pages(
         GROUP BY pv.url_path
         ORDER BY views DESC
         LIMIT $3
-        "#
+        "#,
     )
     .bind(start)
     .bind(end)
@@ -962,12 +975,15 @@ pub async fn get_top_pages(
     .await?;
 
     Ok(Json(TopPagesResponse {
-        pages: pages.into_iter().map(|p| TopPage {
-            path: p.url_path,
-            views: p.views,
-            visitors: p.visitors,
-            avg_time_seconds: p.avg_time_seconds,
-        }).collect(),
+        pages: pages
+            .into_iter()
+            .map(|p| TopPage {
+                path: p.url_path,
+                views: p.views,
+                visitors: p.visitors,
+                avg_time_seconds: p.avg_time_seconds,
+            })
+            .collect(),
         period: period_label,
     }))
 }
@@ -996,7 +1012,7 @@ pub async fn get_referrers(
         GROUP BY COALESCE(s.referrer_domain, 'direct')
         ORDER BY visitors DESC
         LIMIT $3
-        "#
+        "#,
     )
     .bind(start)
     .bind(end)
@@ -1005,11 +1021,14 @@ pub async fn get_referrers(
     .await?;
 
     Ok(Json(TrafficSourcesResponse {
-        sources: sources.into_iter().map(|s| TrafficSource {
-            source: s.source.unwrap_or_else(|| "direct".to_string()),
-            visitors: s.visitors,
-            sessions: s.sessions,
-        }).collect(),
+        sources: sources
+            .into_iter()
+            .map(|s| TrafficSource {
+                source: s.source.unwrap_or_else(|| "direct".to_string()),
+                visitors: s.visitors,
+                sessions: s.sessions,
+            })
+            .collect(),
         period: period_label,
     }))
 }
@@ -1035,7 +1054,7 @@ pub async fn get_devices(
           AND v.is_bot = false AND v.is_admin = false
         GROUP BY s.device_type
         ORDER BY count DESC
-        "#
+        "#,
     )
     .bind(start)
     .bind(end)
@@ -1045,11 +1064,18 @@ pub async fn get_devices(
     let total: f64 = devices.iter().map(|d| d.count as f64).sum();
 
     Ok(Json(DevicesResponse {
-        devices: devices.into_iter().map(|d| DeviceBreakdown {
-            device_type: d.device_type.unwrap_or_else(|| "unknown".to_string()),
-            count: d.count,
-            percentage: if total > 0.0 { (d.count as f64 / total) * 100.0 } else { 0.0 },
-        }).collect(),
+        devices: devices
+            .into_iter()
+            .map(|d| DeviceBreakdown {
+                device_type: d.device_type.unwrap_or_else(|| "unknown".to_string()),
+                count: d.count,
+                percentage: if total > 0.0 {
+                    (d.count as f64 / total) * 100.0
+                } else {
+                    0.0
+                },
+            })
+            .collect(),
     }))
 }
 
@@ -1075,7 +1101,7 @@ pub async fn get_locations(
         GROUP BY s.country_code
         ORDER BY visitors DESC
         LIMIT 20
-        "#
+        "#,
     )
     .bind(start)
     .bind(end)
@@ -1085,11 +1111,18 @@ pub async fn get_locations(
     let total: f64 = locations.iter().map(|l| l.visitors as f64).sum();
 
     Ok(Json(LocationsResponse {
-        locations: locations.into_iter().map(|l| LocationEntry {
-            country_code: l.country_code.unwrap_or_else(|| "XX".to_string()),
-            visitors: l.visitors,
-            percentage: if total > 0.0 { (l.visitors as f64 / total) * 100.0 } else { 0.0 },
-        }).collect(),
+        locations: locations
+            .into_iter()
+            .map(|l| LocationEntry {
+                country_code: l.country_code.unwrap_or_else(|| "XX".to_string()),
+                visitors: l.visitors,
+                percentage: if total > 0.0 {
+                    (l.visitors as f64 / total) * 100.0
+                } else {
+                    0.0
+                },
+            })
+            .collect(),
     }))
 }
 
@@ -1138,23 +1171,38 @@ pub async fn get_timeseries(
 ) -> ApiResult<Json<TimeseriesResponse>> {
     require_admin(&state.pool, &auth_user).await?;
 
-    let granularity = query.granularity.clone().unwrap_or_else(|| "daily".to_string());
+    let granularity = query
+        .granularity
+        .clone()
+        .unwrap_or_else(|| "daily".to_string());
     let now = OffsetDateTime::now_utc();
 
     // Parse dates or use defaults (last 30 days)
-    let end = query.end.as_ref()
-        .and_then(|s| time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok())
+    let end = query
+        .end
+        .as_ref()
+        .and_then(|s| {
+            time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok()
+        })
         .and_then(|d| d.with_hms(23, 59, 59).ok())
         .map(|dt| dt.assume_utc())
         .unwrap_or(now);
 
-    let start = query.start.as_ref()
-        .and_then(|s| time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok())
+    let start = query
+        .start
+        .as_ref()
+        .and_then(|s| {
+            time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok()
+        })
         .and_then(|d| d.with_hms(0, 0, 0).ok())
         .map(|dt| dt.assume_utc())
         .unwrap_or(end - time::Duration::days(30));
 
-    let trunc = if granularity == "hourly" { "hour" } else { "day" };
+    let trunc = if granularity == "hourly" {
+        "hour"
+    } else {
+        "day"
+    };
 
     // Build query with format to avoid dynamic SQL issues
     // Include bot/admin filtering for consistent data across all analytics
@@ -1233,13 +1281,16 @@ pub async fn get_timeseries(
         .await?;
 
     Ok(Json(TimeseriesResponse {
-        data: rows.into_iter().map(|r| TimeseriesPoint {
-            timestamp: r.timestamp,
-            visitors: r.visitors,
-            sessions: r.sessions,
-            page_views: r.page_views,
-            bounces: r.bounces,
-        }).collect(),
+        data: rows
+            .into_iter()
+            .map(|r| TimeseriesPoint {
+                timestamp: r.timestamp,
+                visitors: r.visitors,
+                sessions: r.sessions,
+                page_views: r.page_views,
+                bounces: r.bounces,
+            })
+            .collect(),
         granularity,
     }))
 }
@@ -1274,7 +1325,11 @@ pub struct AnalyticsOverviewEnhanced {
 /// Calculate percentage change
 fn calc_change(current: f64, previous: f64) -> f64 {
     if previous == 0.0 {
-        if current > 0.0 { 100.0 } else { 0.0 }
+        if current > 0.0 {
+            100.0
+        } else {
+            0.0
+        }
     } else {
         ((current - previous) / previous) * 100.0
     }
@@ -1300,14 +1355,22 @@ pub async fn get_overview_enhanced(
     let now = OffsetDateTime::now_utc();
 
     // Parse dates or use defaults
-    let end = query.end.as_ref()
-        .and_then(|s| time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok())
+    let end = query
+        .end
+        .as_ref()
+        .and_then(|s| {
+            time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok()
+        })
         .and_then(|d| d.with_hms(23, 59, 59).ok())
         .map(|dt| dt.assume_utc())
         .unwrap_or(now);
 
-    let start = query.start.as_ref()
-        .and_then(|s| time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok())
+    let start = query
+        .start
+        .as_ref()
+        .and_then(|s| {
+            time::Date::parse(s, time::macros::format_description!("[year]-[month]-[day]")).ok()
+        })
         .and_then(|d| d.with_hms(0, 0, 0).ok())
         .map(|dt| dt.assume_utc())
         .unwrap_or(now - time::Duration::days(30));
@@ -1346,7 +1409,7 @@ pub async fn get_overview_enhanced(
              JOIN analytics_visitors v ON v.id = s.visitor_id
              WHERE s.started_at >= $1 AND s.started_at <= $2 AND s.duration_seconds IS NOT NULL
                AND v.is_bot = false AND v.is_admin = false)::bigint as avg_duration
-        "#
+        "#,
     )
     .bind(start)
     .bind(end)
@@ -1382,7 +1445,7 @@ pub async fn get_overview_enhanced(
              JOIN analytics_visitors v ON v.id = s.visitor_id
              WHERE s.started_at >= $1 AND s.started_at <= $2 AND s.duration_seconds IS NOT NULL
                AND v.is_bot = false AND v.is_admin = false)::bigint as avg_duration
-        "#
+        "#,
     )
     .bind(prev_start)
     .bind(prev_end)
@@ -1397,7 +1460,7 @@ pub async fn get_overview_enhanced(
         JOIN analytics_visitors v ON v.id = r.visitor_id
         WHERE r.last_activity_at >= NOW() - interval '5 minutes'
           AND v.is_bot = false AND v.is_admin = false
-        "#
+        "#,
     )
     .fetch_one(&state.pool)
     .await?;
@@ -1448,7 +1511,7 @@ pub async fn get_overview_enhanced(
         bounce_rate_change: calc_change(bounce_rate, prev_bounce_rate),
         duration_change: calc_change(
             current.avg_duration.unwrap_or(0) as f64,
-            previous.avg_duration.unwrap_or(0) as f64
+            previous.avg_duration.unwrap_or(0) as f64,
         ),
     }))
 }
@@ -1502,7 +1565,7 @@ pub async fn get_events(
         GROUP BY e.event_name, e.event_category
         ORDER BY count DESC
         LIMIT $3
-        "#
+        "#,
     )
     .bind(start)
     .bind(end)
@@ -1511,12 +1574,15 @@ pub async fn get_events(
     .await?;
 
     Ok(Json(EventsResponse {
-        events: events.into_iter().map(|e| AnalyticsEvent {
-            id: Uuid::new_v4(),
-            event_name: e.event_name,
-            event_category: e.event_category,
-            count: e.count,
-        }).collect(),
+        events: events
+            .into_iter()
+            .map(|e| AnalyticsEvent {
+                id: Uuid::new_v4(),
+                event_name: e.event_name,
+                event_category: e.event_category,
+                count: e.count,
+            })
+            .collect(),
         period: period_label,
     }))
 }
@@ -1569,7 +1635,7 @@ pub async fn get_event_details(
           AND v.is_bot = false AND v.is_admin = false
         ORDER BY e.created_at DESC
         LIMIT $3
-        "#
+        "#,
     )
     .bind(start)
     .bind(end)
@@ -1584,7 +1650,7 @@ pub async fn get_event_details(
         JOIN analytics_visitors v ON v.id = e.visitor_id
         WHERE e.created_at >= $1 AND e.created_at <= $2
           AND v.is_bot = false AND v.is_admin = false
-        "#
+        "#,
     )
     .bind(start)
     .bind(end)
@@ -1592,14 +1658,17 @@ pub async fn get_event_details(
     .await?;
 
     Ok(Json(EventDetailsResponse {
-        events: events.into_iter().map(|e| EventDetail {
-            id: e.id,
-            event_name: e.event_name,
-            event_category: e.event_category,
-            event_data: e.event_data,
-            page_url: e.page_url,
-            created_at: e.created_at,
-        }).collect(),
+        events: events
+            .into_iter()
+            .map(|e| EventDetail {
+                id: e.id,
+                event_name: e.event_name,
+                event_category: e.event_category,
+                event_data: e.event_data,
+                page_url: e.page_url,
+                created_at: e.created_at,
+            })
+            .collect(),
         total: total.0,
     }))
 }
@@ -1663,7 +1732,7 @@ pub async fn list_goals(
                min_duration_seconds, min_page_views, is_active, created_at, updated_at
         FROM analytics_goals
         ORDER BY created_at DESC
-        "#
+        "#,
     )
     .fetch_all(&state.pool)
     .await?;
@@ -1724,7 +1793,7 @@ pub async fn update_goal(
         WHERE id = $1
         RETURNING id, name, description, event_name, url_pattern, goal_type,
                   min_duration_seconds, min_page_views, is_active, created_at, updated_at
-        "#
+        "#,
     )
     .bind(goal_id)
     .bind(&req.name)
@@ -1808,7 +1877,7 @@ pub async fn get_settings(
                created_at, updated_at
         FROM analytics_settings
         LIMIT 1
-        "#
+        "#,
     )
     .fetch_one(&state.pool)
     .await?;
@@ -1843,7 +1912,7 @@ pub async fn update_settings(
                   raw_data_retention_days, aggregate_retention_days, enable_realtime,
                   realtime_max_visitors, excluded_paths, excluded_ips, filter_bots,
                   created_at, updated_at
-        "#
+        "#,
     )
     .bind(req.anonymize_ip)
     .bind(req.collect_city)
@@ -1877,7 +1946,10 @@ pub struct Alert {
     pub threshold_multiplier: f64,
     #[serde(with = "timestamp_format")]
     pub triggered_at: OffsetDateTime,
-    #[serde(with = "optional_timestamp_format", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        with = "optional_timestamp_format",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub resolved_at: Option<OffsetDateTime>,
     pub is_resolved: bool,
     pub resolution_note: Option<String>,
@@ -1924,7 +1996,7 @@ async fn check_traffic_alerts(pool: &sqlx::PgPool) -> Result<bool, sqlx::Error> 
         SELECT COUNT(DISTINCT visitor_id)::bigint
         FROM analytics_realtime
         WHERE last_activity_at > NOW() - MAKE_INTERVAL(mins => $1)
-        "#
+        "#,
     )
     .bind(time_window_minutes)
     .fetch_one(pool)
@@ -1946,7 +2018,7 @@ async fn check_traffic_alerts(pool: &sqlx::PgPool) -> Result<bool, sqlx::Error> 
               AND v.is_bot = false AND v.is_admin = false
             GROUP BY date_trunc('minute', s.started_at)
         ) subq
-        "#
+        "#,
     )
     .bind(time_window_minutes)
     .fetch_one(pool)
@@ -1964,14 +2036,16 @@ async fn check_traffic_alerts(pool: &sqlx::PgPool) -> Result<bool, sqlx::Error> 
               AND is_resolved = false
               AND triggered_at > NOW() - INTERVAL '15 minutes'
             LIMIT 1
-            "#
+            "#,
         )
         .fetch_optional(pool)
         .await?;
 
         if existing_alert.is_none() {
             // Create new alert
-            let severity = if current_value as f64 > (baseline_value as f64 * threshold_multiplier * 2.0) {
+            let severity = if current_value as f64
+                > (baseline_value as f64 * threshold_multiplier * 2.0)
+            {
                 "high"
             } else if current_value as f64 > (baseline_value as f64 * threshold_multiplier * 1.5) {
                 "medium"
@@ -1986,7 +2060,7 @@ async fn check_traffic_alerts(pool: &sqlx::PgPool) -> Result<bool, sqlx::Error> 
                     current_value, baseline_value, threshold_multiplier,
                     time_window_minutes
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                "#
+                "#,
             )
             .bind("traffic_spike")
             .bind(severity)
@@ -2033,14 +2107,17 @@ pub async fn list_alerts(
 ) -> ApiResult<Json<AlertsResponse>> {
     require_admin(&state.pool, &auth_user).await?;
 
-    let is_resolved = params.get("is_resolved")
+    let is_resolved = params
+        .get("is_resolved")
         .and_then(|v| v.parse::<bool>().ok());
 
-    let limit: i64 = params.get("limit")
+    let limit: i64 = params
+        .get("limit")
         .and_then(|v| v.parse().ok())
         .unwrap_or(50);
 
-    let offset: i64 = params.get("offset")
+    let offset: i64 = params
+        .get("offset")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
 
@@ -2054,7 +2131,7 @@ pub async fn list_alerts(
             WHERE is_resolved = $1
             ORDER BY triggered_at DESC
             LIMIT $2 OFFSET $3
-            "#
+            "#,
         )
         .bind(resolved)
         .bind(limit)
@@ -2068,7 +2145,7 @@ pub async fn list_alerts(
             FROM analytics_alerts
             ORDER BY triggered_at DESC
             LIMIT $1 OFFSET $2
-            "#
+            "#,
         )
         .bind(limit)
         .bind(offset)
@@ -2078,13 +2155,11 @@ pub async fn list_alerts(
 
     let total_query = if let Some(resolved) = is_resolved {
         sqlx::query_as::<_, (i64,)>(
-            "SELECT COUNT(*)::bigint FROM analytics_alerts WHERE is_resolved = $1"
+            "SELECT COUNT(*)::bigint FROM analytics_alerts WHERE is_resolved = $1",
         )
         .bind(resolved)
     } else {
-        sqlx::query_as::<_, (i64,)>(
-            "SELECT COUNT(*)::bigint FROM analytics_alerts"
-        )
+        sqlx::query_as::<_, (i64,)>("SELECT COUNT(*)::bigint FROM analytics_alerts")
     };
 
     let total: (i64,) = total_query.fetch_one(&state.pool).await?;
@@ -2112,7 +2187,7 @@ pub async fn resolve_alert(
             resolution_note = $2
         WHERE id = $1
         RETURNING *
-        "#
+        "#,
     )
     .bind(alert_id)
     .bind(&req.resolution_note)

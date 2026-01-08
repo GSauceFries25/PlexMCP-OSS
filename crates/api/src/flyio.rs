@@ -179,8 +179,7 @@ impl FlyClient {
 
         info!(
             "Successfully initiated certificate for {} (authority: {:?})",
-            hostname,
-            cert.certificate_authority
+            hostname, cert.certificate_authority
         );
 
         Ok(cert)

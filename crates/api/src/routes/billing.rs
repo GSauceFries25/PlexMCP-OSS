@@ -87,12 +87,12 @@ pub async fn preview_proration(
     Extension(auth_user): Extension<AuthUser>,
     Query(req): Query<ProrationPreviewRequest>,
 ) -> Result<Json<ProrationPreviewResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
-    let preview = billing.subscriptions
+    let preview = billing
+        .subscriptions
         .preview_upgrade_proration(org_id, &req.tier)
         .await
         .map_err(|e| {
@@ -123,8 +123,7 @@ pub async fn create_checkout(
     Extension(auth_user): Extension<AuthUser>,
     Json(req): Json<CreateCheckoutRequest>,
 ) -> Result<Json<CheckoutResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     // Get org's Stripe customer ID
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
@@ -132,7 +131,8 @@ pub async fn create_checkout(
     let customer_id = get_or_create_customer(&state, billing, org_id, email).await?;
 
     // Parse billing interval
-    let billing_interval = req.billing_interval
+    let billing_interval = req
+        .billing_interval
         .as_deref()
         .and_then(plexmcp_billing::BillingInterval::from_str)
         .unwrap_or_default();
@@ -145,13 +145,25 @@ pub async fn create_checkout(
             tier = %req.tier,
             "Creating upgrade checkout session with pending overages"
         );
-        billing.checkout
-            .create_upgrade_checkout_with_interval(org_id, &customer_id, &req.tier, billing_interval)
+        billing
+            .checkout
+            .create_upgrade_checkout_with_interval(
+                org_id,
+                &customer_id,
+                &req.tier,
+                billing_interval,
+            )
             .await
             .map_err(|e| ApiError::Database(format!("Failed to create upgrade checkout: {}", e)))?
     } else {
-        billing.checkout
-            .create_subscription_checkout_with_interval(org_id, &customer_id, &req.tier, billing_interval)
+        billing
+            .checkout
+            .create_subscription_checkout_with_interval(
+                org_id,
+                &customer_id,
+                &req.tier,
+                billing_interval,
+            )
             .await
             .map_err(|e| ApiError::Database(format!("Failed to create checkout: {}", e)))?
     };
@@ -167,15 +179,15 @@ pub async fn create_portal_session(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<PortalResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     // Get org's Stripe customer ID (create if needed)
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
     let email = auth_user.email.as_deref().unwrap_or("");
     let customer_id = get_or_create_customer(&state, billing, org_id, email).await?;
 
-    let session = billing.portal
+    let session = billing
+        .portal
         .create_portal_session(org_id, &customer_id)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to create portal session: {}", e)))?;
@@ -192,44 +204,48 @@ pub async fn get_subscription(
 ) -> Result<Json<SubscriptionInfo>, ApiError> {
     tracing::info!("get_subscription: starting");
 
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
     tracing::info!(org_id = %org_id, "get_subscription: got org_id");
 
     // Get the org's subscription tier from the database as fallback
-    let db_tier: Option<(String,)> = sqlx::query_as(
-        "SELECT subscription_tier FROM organizations WHERE id = $1"
-    )
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "get_subscription: failed to get org tier");
-        ApiError::Database(format!("Failed to get org tier: {}", e))
-    })?;
+    let db_tier: Option<(String,)> =
+        sqlx::query_as("SELECT subscription_tier FROM organizations WHERE id = $1")
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "get_subscription: failed to get org tier");
+                ApiError::Database(format!("Failed to get org tier: {}", e))
+            })?;
     let fallback_tier = db_tier.map(|(t,)| t).unwrap_or_else(|| "free".to_string());
     tracing::info!(fallback_tier = %fallback_tier, "get_subscription: got fallback tier");
 
-    let subscription = billing.subscriptions
+    let subscription = billing
+        .subscriptions
         .get_subscription(org_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "get_subscription: failed to get stripe subscription");
             ApiError::Database(format!("Failed to get subscription: {}", e))
         })?;
-    tracing::info!(has_subscription = subscription.is_some(), "get_subscription: got stripe subscription result");
+    tracing::info!(
+        has_subscription = subscription.is_some(),
+        "get_subscription: got stripe subscription result"
+    );
 
     // Check for scheduled downgrade
-    let scheduled_downgrade = billing.subscriptions
+    let scheduled_downgrade = billing
+        .subscriptions
         .get_scheduled_downgrade(org_id)
         .await
         .ok()
         .flatten()
         .map(|d| ScheduledDowngradeInfo {
             to_tier: d.new_tier,
-            effective_date: d.effective_date
+            effective_date: d
+                .effective_date
                 .format(&time::format_description::well_known::Rfc3339)
                 .unwrap_or_default(),
         });
@@ -245,10 +261,17 @@ pub async fn get_subscription(
                 fallback_tier.clone()
             } else {
                 // For active subscriptions, use Stripe price ID or fallback to database tier
-                sub.items.data
+                sub.items
+                    .data
                     .first()
                     .and_then(|item| item.price.as_ref())
-                    .and_then(|price| billing.subscriptions.stripe().config().tier_for_price_id(price.id.as_str()))
+                    .and_then(|price| {
+                        billing
+                            .subscriptions
+                            .stripe()
+                            .config()
+                            .tier_for_price_id(price.id.as_str())
+                    })
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| fallback_tier.clone())
             };
@@ -269,19 +292,25 @@ pub async fn get_subscription(
                     tier,
                     current_period_start: Some(
                         time::OffsetDateTime::from_unix_timestamp(sub.current_period_start)
-                            .map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default())
-                            .unwrap_or_default()
+                            .map(|t| {
+                                t.format(&time::format_description::well_known::Rfc3339)
+                                    .unwrap_or_default()
+                            })
+                            .unwrap_or_default(),
                     ),
                     current_period_end: Some(
                         time::OffsetDateTime::from_unix_timestamp(sub.current_period_end)
-                            .map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default())
-                            .unwrap_or_default()
+                            .map(|t| {
+                                t.format(&time::format_description::well_known::Rfc3339)
+                                    .unwrap_or_default()
+                            })
+                            .unwrap_or_default(),
                     ),
                     cancel_at_period_end: sub.cancel_at_period_end,
                     scheduled_downgrade,
                 }
             }
-        },
+        }
         None => {
             // No Stripe subscription - return info from database tier
             SubscriptionInfo {
@@ -309,21 +338,19 @@ pub async fn update_subscription(
     Extension(auth_user): Extension<AuthUser>,
     Json(req): Json<UpdateSubscriptionRequest>,
 ) -> Result<Json<SubscriptionInfo>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
     let user_id = auth_user.user_id;
 
     // Get old tier for audit logging (SOC 2 CC5.2)
-    let old_tier: Option<(String,)> = sqlx::query_as(
-        "SELECT subscription_tier FROM organizations WHERE id = $1"
-    )
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await
-    .ok()
-    .flatten();
+    let old_tier: Option<(String,)> =
+        sqlx::query_as("SELECT subscription_tier FROM organizations WHERE id = $1")
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
     let old_tier_str = old_tier.map(|(t,)| t).unwrap_or_else(|| "free".to_string());
 
     // Auto-bill any pending overages before tier change
@@ -387,10 +414,18 @@ pub async fn update_subscription(
             ApiError::Database(format!("Failed to update subscription: {}", e))
         })?;
 
-    let tier = subscription.items.data
+    let tier = subscription
+        .items
+        .data
         .first()
         .and_then(|item| item.price.as_ref())
-        .and_then(|price| billing.subscriptions.stripe().config().tier_for_price_id(price.id.as_str()))
+        .and_then(|price| {
+            billing
+                .subscriptions
+                .stripe()
+                .config()
+                .tier_for_price_id(price.id.as_str())
+        })
         .map(|s| s.to_string())
         .unwrap_or_else(|| req.tier.clone());
 
@@ -405,7 +440,7 @@ pub async fn update_subscription(
         r#"INSERT INTO admin_audit_log (
             admin_user_id, action, target_type, target_id, details,
             event_type, severity
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)"#
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
     )
     .bind(user_id)
     .bind(admin_action::SUBSCRIPTION_CHANGED)
@@ -430,13 +465,19 @@ pub async fn update_subscription(
         tier,
         current_period_start: Some(
             time::OffsetDateTime::from_unix_timestamp(subscription.current_period_start)
-                .map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default())
-                .unwrap_or_default()
+                .map(|t| {
+                    t.format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default(),
         ),
         current_period_end: Some(
             time::OffsetDateTime::from_unix_timestamp(subscription.current_period_end)
-                .map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default())
-                .unwrap_or_default()
+                .map(|t| {
+                    t.format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default(),
         ),
         cancel_at_period_end: subscription.cancel_at_period_end,
         scheduled_downgrade: None, // Just upgraded, no downgrade scheduled
@@ -448,15 +489,15 @@ pub async fn cancel_subscription(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<StatusCode, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
     let user_id = auth_user.user_id;
 
     // Check current subscription status first - make cancel idempotent
     // This prevents 404 errors when user clicks "Cancel" on already-cancelled subscription
-    let subscription = billing.subscriptions
+    let subscription = billing
+        .subscriptions
         .get_subscription(org_id)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to get subscription: {}", e)))?;
@@ -480,17 +521,19 @@ pub async fn cancel_subscription(
     }
 
     // Get current tier for audit logging (SOC 2 CC5.2)
-    let current_tier: Option<(String,)> = sqlx::query_as(
-        "SELECT subscription_tier FROM organizations WHERE id = $1"
-    )
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await
-    .ok()
-    .flatten();
-    let tier_str = current_tier.map(|(t,)| t).unwrap_or_else(|| "unknown".to_string());
+    let current_tier: Option<(String,)> =
+        sqlx::query_as("SELECT subscription_tier FROM organizations WHERE id = $1")
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
+    let tier_str = current_tier
+        .map(|(t,)| t)
+        .unwrap_or_else(|| "unknown".to_string());
 
-    billing.subscriptions
+    billing
+        .subscriptions
         .cancel_subscription(org_id)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to cancel subscription: {}", e)))?;
@@ -505,7 +548,7 @@ pub async fn cancel_subscription(
         r#"INSERT INTO admin_audit_log (
             admin_user_id, action, target_type, target_id, details,
             event_type, severity
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)"#
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
     )
     .bind(user_id)
     .bind(admin_action::SUBSCRIPTION_CANCELED)
@@ -532,20 +575,28 @@ pub async fn resume_subscription(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<SubscriptionInfo>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
-    let subscription = billing.subscriptions
+    let subscription = billing
+        .subscriptions
         .resume_subscription(org_id)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to resume subscription: {}", e)))?;
 
-    let tier = subscription.items.data
+    let tier = subscription
+        .items
+        .data
         .first()
         .and_then(|item| item.price.as_ref())
-        .and_then(|price| billing.subscriptions.stripe().config().tier_for_price_id(price.id.as_str()))
+        .and_then(|price| {
+            billing
+                .subscriptions
+                .stripe()
+                .config()
+                .tier_for_price_id(price.id.as_str())
+        })
         .map(|s| s.to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
@@ -554,13 +605,19 @@ pub async fn resume_subscription(
         tier,
         current_period_start: Some(
             time::OffsetDateTime::from_unix_timestamp(subscription.current_period_start)
-                .map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default())
-                .unwrap_or_default()
+                .map(|t| {
+                    t.format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default(),
         ),
         current_period_end: Some(
             time::OffsetDateTime::from_unix_timestamp(subscription.current_period_end)
-                .map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default())
-                .unwrap_or_default()
+                .map(|t| {
+                    t.format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default(),
         ),
         cancel_at_period_end: subscription.cancel_at_period_end,
         scheduled_downgrade: None, // Resumed, no downgrade scheduled
@@ -607,8 +664,7 @@ pub async fn reactivate_subscription(
         "Reactivate subscription handler entered"
     );
 
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
     let user_id = auth_user.user_id;
@@ -620,7 +676,8 @@ pub async fn reactivate_subscription(
         "Reactivating cancelled subscription"
     );
 
-    let reactivation_result = billing.subscriptions
+    let reactivation_result = billing
+        .subscriptions
         .reactivate_subscription(org_id, &req.tier, &req.billing_interval)
         .await;
 
@@ -641,55 +698,72 @@ pub async fn reactivate_subscription(
 
             let checkout_url = if let Some(coupon) = coupon_id {
                 // Create checkout with coupon
-                match billing.checkout.create_subscription_checkout_with_coupon(
-                    org_id,
-                    &customer_id,
-                    &tier,
-                    billing_interval,
-                    &coupon,
-                ).await {
+                match billing
+                    .checkout
+                    .create_subscription_checkout_with_coupon(
+                        org_id,
+                        &customer_id,
+                        &tier,
+                        billing_interval,
+                        &coupon,
+                    )
+                    .await
+                {
                     Ok(session) => session.url.unwrap_or_default(),
                     Err(e) => {
                         tracing::error!(error = %e, "Failed to create checkout with coupon");
                         // Fallback to regular checkout
-                        match billing.checkout.create_subscription_checkout_with_interval(
-                            org_id,
-                            &customer_id,
-                            &tier,
-                            billing_interval,
-                        ).await {
+                        match billing
+                            .checkout
+                            .create_subscription_checkout_with_interval(
+                                org_id,
+                                &customer_id,
+                                &tier,
+                                billing_interval,
+                            )
+                            .await
+                        {
                             Ok(session) => session.url.unwrap_or_default(),
                             Err(e) => {
-                                return Err(ApiError::BadRequest(
-                                    format!("Failed to create checkout: {}", e)
-                                ));
+                                return Err(ApiError::BadRequest(format!(
+                                    "Failed to create checkout: {}",
+                                    e
+                                )));
                             }
                         }
                     }
                 }
             } else {
                 // Create checkout without coupon
-                match billing.checkout.create_subscription_checkout_with_interval(
-                    org_id,
-                    &customer_id,
-                    &tier,
-                    billing_interval,
-                ).await {
+                match billing
+                    .checkout
+                    .create_subscription_checkout_with_interval(
+                        org_id,
+                        &customer_id,
+                        &tier,
+                        billing_interval,
+                    )
+                    .await
+                {
                     Ok(session) => session.url.unwrap_or_default(),
                     Err(e) => {
-                        return Err(ApiError::BadRequest(
-                            format!("Failed to create checkout: {}", e)
-                        ));
+                        return Err(ApiError::BadRequest(format!(
+                            "Failed to create checkout: {}",
+                            e
+                        )));
                     }
                 }
             };
 
-            return Err(ApiError::BadRequest(serde_json::json!({
-                "code": "USE_CHECKOUT_FLOW",
-                "message": "Partial credit requires checkout flow",
-                "checkout_url": checkout_url,
-                "credit_cents": credit_cents,
-            }).to_string()));
+            return Err(ApiError::BadRequest(
+                serde_json::json!({
+                    "code": "USE_CHECKOUT_FLOW",
+                    "message": "Partial credit requires checkout flow",
+                    "checkout_url": checkout_url,
+                    "credit_cents": credit_cents,
+                })
+                .to_string(),
+            ));
         }
         Err(plexmcp_billing::BillingError::OveragesExceedCredit {
             overage_cents,
@@ -706,7 +780,7 @@ pub async fn reactivate_subscription(
         }
         Err(plexmcp_billing::BillingError::NoCustomer) => {
             return Err(ApiError::BadRequest(
-                "No payment method on file. Please add a payment method first.".to_string()
+                "No payment method on file. Please add a payment method first.".to_string(),
             ));
         }
         Err(plexmcp_billing::BillingError::InvalidTier(msg)) => {
@@ -720,9 +794,10 @@ pub async fn reactivate_subscription(
                 error_debug = ?e,
                 "Reactivation failed with unhandled error type"
             );
-            return Err(ApiError::Database(
-                format!("Failed to reactivate subscription: {}", e)
-            ));
+            return Err(ApiError::Database(format!(
+                "Failed to reactivate subscription: {}",
+                e
+            )));
         }
     };
 
@@ -739,7 +814,7 @@ pub async fn reactivate_subscription(
         r#"INSERT INTO admin_audit_log (
             admin_user_id, action, target_type, target_id, details,
             event_type, severity
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)"#
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
     )
     .bind(user_id)
     .bind("subscription_reactivated")
@@ -766,13 +841,14 @@ pub async fn reactivate_subscription(
         credit_applied_cents: result.credit_applied_cents,
         extra_trial_days: result.extra_trial_days,
         overages_deducted_cents: result.overages_deducted_cents,
-        current_period_end: result.current_period_end
+        current_period_end: result
+            .current_period_end
             .format(&time::format_description::well_known::Rfc3339)
             .unwrap_or_default(),
-        trial_end: result.trial_end.map(|t|
+        trial_end: result.trial_end.map(|t| {
             t.format(&time::format_description::well_known::Rfc3339)
                 .unwrap_or_default()
-        ),
+        }),
         message: result.message,
     }))
 }
@@ -783,13 +859,9 @@ pub async fn webhook(
     headers: HeaderMap,
     body: String,
 ) -> Result<StatusCode, ApiError> {
-    tracing::info!(
-        body_len = body.len(),
-        "Stripe webhook received"
-    );
+    tracing::info!(body_len = body.len(), "Stripe webhook received");
 
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     // Get signature header
     let signature = headers
@@ -801,7 +873,8 @@ pub async fn webhook(
         })?;
 
     // Verify and parse event
-    let event = billing.webhooks
+    let event = billing
+        .webhooks
         .verify_event(&body, signature)
         .map_err(|e| {
             tracing::warn!(error = ?e, "Stripe webhook signature verification failed");
@@ -815,13 +888,10 @@ pub async fn webhook(
     );
 
     // Handle the event
-    billing.webhooks
-        .handle_event(event)
-        .await
-        .map_err(|e| {
-            tracing::error!("Webhook handling error: {}", e);
-            ApiError::Database(format!("Webhook handling error: {}", e))
-        })?;
+    billing.webhooks.handle_event(event).await.map_err(|e| {
+        tracing::error!("Webhook handling error: {}", e);
+        ApiError::Database(format!("Webhook handling error: {}", e))
+    })?;
 
     tracing::info!("Stripe webhook processed successfully");
 
@@ -878,58 +948,66 @@ pub async fn get_overages(
     Extension(auth_user): Extension<AuthUser>,
     Query(query): Query<OveragesQuery>,
 ) -> Result<Json<OveragesResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
     let limit = query.limit.unwrap_or(12); // Default to 12 billing periods
 
     // Get overage charges
-    let charges = billing.overage
+    let charges = billing
+        .overage
         .get_charges(org_id, limit)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to get overages: {}", e)))?;
 
     // Calculate totals
-    let total_paid_cents: i64 = charges.iter()
+    let total_paid_cents: i64 = charges
+        .iter()
         .filter(|c| c.status == "paid")
         .map(|c| c.total_charge_cents as i64)
         .sum();
 
-    let total_pending_cents: i64 = charges.iter()
+    let total_pending_cents: i64 = charges
+        .iter()
         .filter(|c| c.status == "pending" || c.status == "invoiced")
         .map(|c| c.total_charge_cents as i64)
         .sum();
 
     // Convert to response format
-    let charge_responses: Vec<OverageChargeResponse> = charges.into_iter().map(|c| {
-        // Calculate rate per 1K calls: rate_per_unit_cents is cents per 1K batch
-        // Pro: 50 cents -> $0.50, Team: 25 cents -> $0.25
-        let rate_per_1k = if c.rate_per_unit_cents > 0 {
-            c.rate_per_unit_cents as f64 / 100.0 // Convert from cents to dollars
-        } else {
-            0.0
-        };
+    let charge_responses: Vec<OverageChargeResponse> = charges
+        .into_iter()
+        .map(|c| {
+            // Calculate rate per 1K calls: rate_per_unit_cents is cents per 1K batch
+            // Pro: 50 cents -> $0.50, Team: 25 cents -> $0.25
+            let rate_per_1k = if c.rate_per_unit_cents > 0 {
+                c.rate_per_unit_cents as f64 / 100.0 // Convert from cents to dollars
+            } else {
+                0.0
+            };
 
-        OverageChargeResponse {
-            id: c.id.to_string(),
-            period_start: c.billing_period_start
-                .format(&time::format_description::well_known::Rfc3339)
-                .unwrap_or_default(),
-            period_end: c.billing_period_end
-                .format(&time::format_description::well_known::Rfc3339)
-                .unwrap_or_default(),
-            actual_usage: c.actual_usage,
-            included_limit: c.base_limit,
-            overage_amount: c.overage_amount,
-            rate_per_1k,
-            total_charge_cents: c.total_charge_cents as i64,
-            status: c.status,
-            created_at: c.created_at
-                .format(&time::format_description::well_known::Rfc3339)
-                .unwrap_or_default(),
-        }
-    }).collect();
+            OverageChargeResponse {
+                id: c.id.to_string(),
+                period_start: c
+                    .billing_period_start
+                    .format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default(),
+                period_end: c
+                    .billing_period_end
+                    .format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default(),
+                actual_usage: c.actual_usage,
+                included_limit: c.base_limit,
+                overage_amount: c.overage_amount,
+                rate_per_1k,
+                total_charge_cents: c.total_charge_cents as i64,
+                status: c.status,
+                created_at: c
+                    .created_at
+                    .format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default(),
+            }
+        })
+        .collect();
 
     Ok(Json(OveragesResponse {
         charges: charge_responses,
@@ -941,9 +1019,9 @@ pub async fn get_overages(
 /// Overage rates by tier (matches frontend plan definitions)
 fn get_overage_rate_for_tier(tier: &str) -> f64 {
     match tier {
-        "pro" => 0.50,      // $0.50 per 1K calls
-        "team" => 0.25,     // $0.25 per 1K calls
-        _ => 0.0,           // Free and enterprise don't have overage
+        "pro" => 0.50,  // $0.50 per 1K calls
+        "team" => 0.25, // $0.25 per 1K calls
+        _ => 0.0,       // Free and enterprise don't have overage
     }
 }
 
@@ -951,9 +1029,9 @@ fn get_overage_rate_for_tier(tier: &str) -> f64 {
 fn get_included_limit_for_tier(tier: &str) -> i64 {
     match tier {
         "free" => 1_000,
-        "starter" => 1_000,      // Legacy tier - same as Free
+        "starter" => 1_000, // Legacy tier - same as Free
         "pro" => 50_000,
-        "team" => 250_000,       // Corrected: was 200_000, should be 250_000
+        "team" => 250_000,        // Corrected: was 200_000, should be 250_000
         "enterprise" => i64::MAX, // Unlimited
         _ => 1_000,
     }
@@ -966,40 +1044,51 @@ pub async fn get_current_overage(
 ) -> Result<Json<CurrentOverageResponse>, ApiError> {
     tracing::info!("get_current_overage: starting");
 
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
     tracing::info!(org_id = %org_id, "get_current_overage: got org_id");
 
     // Get current subscription to find tier and billing period
-    let subscription = billing.subscriptions
+    let subscription = billing
+        .subscriptions
         .get_subscription(org_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "get_current_overage: failed to get subscription");
             ApiError::Database(format!("Failed to get subscription: {}", e))
         })?;
-    tracing::info!(has_subscription = subscription.is_some(), "get_current_overage: got subscription result");
+    tracing::info!(
+        has_subscription = subscription.is_some(),
+        "get_current_overage: got subscription result"
+    );
 
     // Get tier from database since we may not have Stripe subscription
-    let db_tier: Option<(String,)> = sqlx::query_as(
-        "SELECT subscription_tier FROM organizations WHERE id = $1"
-    )
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!(error = %e, "get_current_overage: failed to get org tier from db");
-        ApiError::Database(format!("Failed to get org tier: {}", e))
-    })?;
+    let db_tier: Option<(String,)> =
+        sqlx::query_as("SELECT subscription_tier FROM organizations WHERE id = $1")
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "get_current_overage: failed to get org tier from db");
+                ApiError::Database(format!("Failed to get org tier: {}", e))
+            })?;
 
     // Determine tier from Stripe subscription first, then database, then default to free
-    let tier = subscription.as_ref()
+    let tier = subscription
+        .as_ref()
         .and_then(|sub| {
-            sub.items.data.first()
+            sub.items
+                .data
+                .first()
                 .and_then(|item| item.price.as_ref())
-                .and_then(|price| billing.subscriptions.stripe().config().tier_for_price_id(price.id.as_str()))
+                .and_then(|price| {
+                    billing
+                        .subscriptions
+                        .stripe()
+                        .config()
+                        .tier_for_price_id(price.id.as_str())
+                })
                 .map(|s| s.to_string())
         })
         .or_else(|| db_tier.map(|(t,)| t))
@@ -1008,12 +1097,20 @@ pub async fn get_current_overage(
 
     let overage_rate = get_overage_rate_for_tier(&tier);
     let included_limit = get_included_limit_for_tier(&tier);
-    tracing::info!(overage_rate = overage_rate, included_limit = included_limit, "get_current_overage: got rates");
+    tracing::info!(
+        overage_rate = overage_rate,
+        included_limit = included_limit,
+        "get_current_overage: got rates"
+    );
 
     // Get period info from Stripe subscription first, then from database
-    let (period_start, period_end_opt): (OffsetDateTime, Option<OffsetDateTime>) = if let Some(sub) = subscription.as_ref() {
-        let start = OffsetDateTime::from_unix_timestamp(sub.current_period_start)
-            .unwrap_or_else(|_| {
+    let (period_start, period_end_opt): (OffsetDateTime, Option<OffsetDateTime>) = if let Some(
+        sub,
+    ) =
+        subscription.as_ref()
+    {
+        let start =
+            OffsetDateTime::from_unix_timestamp(sub.current_period_start).unwrap_or_else(|_| {
                 let now = OffsetDateTime::now_utc();
                 now.replace_day(1).unwrap_or(now)
             });
@@ -1036,25 +1133,35 @@ pub async fn get_current_overage(
         } else {
             // Default to start of current month
             let now = OffsetDateTime::now_utc();
-            let start = now.replace_day(1).unwrap_or(now)
-                .replace_hour(0).unwrap_or(now)
-                .replace_minute(0).unwrap_or(now)
-                .replace_second(0).unwrap_or(now);
+            let start = now
+                .replace_day(1)
+                .unwrap_or(now)
+                .replace_hour(0)
+                .unwrap_or(now)
+                .replace_minute(0)
+                .unwrap_or(now)
+                .replace_second(0)
+                .unwrap_or(now);
             (start, None)
         }
     };
     tracing::info!(period_start = %period_start, "get_current_overage: got period start");
 
     let period_ends_at = period_end_opt.map(|t| {
-        t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()
+        t.format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_default()
     });
 
     // Get current usage for the billing period
-    let current_usage = billing.metered
+    let current_usage = billing
+        .metered
         .get_period_usage(org_id, period_start)
         .await
         .unwrap_or(0);
-    tracing::info!(current_usage = current_usage, "get_current_overage: got usage");
+    tracing::info!(
+        current_usage = current_usage,
+        "get_current_overage: got usage"
+    );
 
     // Calculate total overage
     let total_overage_calls = (current_usage - included_limit).max(0);
@@ -1078,7 +1185,7 @@ pub async fn get_current_overage(
           AND billing_period_start = $2
           AND resource_type = 'requests'
           AND status = 'paid'
-        "#
+        "#,
     )
     .bind(org_id)
     .bind(period_start)
@@ -1104,12 +1211,10 @@ pub async fn get_current_overage(
     if overage_calls > 0 && overage_rate > 0.0 {
         if let Some(period_end) = period_end_opt {
             // Fire and forget - don't fail the request if this errors
-            let _ = billing.overage.create_or_update_current_overage(
-                org_id,
-                &tier,
-                period_start,
-                period_end,
-            ).await;
+            let _ = billing
+                .overage
+                .create_or_update_current_overage(org_id, &tier, period_start, period_end)
+                .await;
         }
     }
 
@@ -1136,20 +1241,19 @@ async fn get_or_create_customer(
     }
 
     // Get org name
-    let org: Option<(String,)> = sqlx::query_as(
-        "SELECT name FROM organizations WHERE id = $1"
-    )
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| ApiError::Database(format!("Database error: {}", e)))?;
+    let org: Option<(String,)> = sqlx::query_as("SELECT name FROM organizations WHERE id = $1")
+        .bind(org_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| ApiError::Database(format!("Database error: {}", e)))?;
 
     let org_name = org
         .map(|(name,)| name)
         .unwrap_or_else(|| "Unknown Organization".to_string());
 
     // Create customer
-    let customer = billing.customer
+    let customer = billing
+        .customer
         .get_or_create_customer(org_id, email, &org_name)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to create customer: {}", e)))?;
@@ -1159,13 +1263,12 @@ async fn get_or_create_customer(
 
 /// Helper: Get existing Stripe customer ID
 async fn get_customer_id(state: &AppState, org_id: uuid::Uuid) -> Result<Option<String>, ApiError> {
-    let result: Option<(Option<String>,)> = sqlx::query_as(
-        "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-    )
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| ApiError::Database(format!("Database error: {}", e)))?;
+    let result: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| ApiError::Database(format!("Database error: {}", e)))?;
 
     Ok(result.and_then(|(id,)| id))
 }
@@ -1200,12 +1303,12 @@ pub async fn get_spend_cap(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<SpendCapStatusResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
-    let status = billing.spend_cap
+    let status = billing
+        .spend_cap
         .get_status(org_id)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to get spend cap: {}", e)))?;
@@ -1218,11 +1321,13 @@ pub async fn get_spend_cap(
         hard_pause_enabled: status.hard_pause_enabled,
         is_paused: status.is_paused,
         paused_at: status.paused_at.map(|t| {
-            t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
         }),
         has_override: status.has_override,
         override_until: status.override_until.map(|t| {
-            t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
         }),
     }))
 }
@@ -1233,8 +1338,7 @@ pub async fn set_spend_cap(
     Extension(auth_user): Extension<AuthUser>,
     Json(req): Json<SetSpendCapRequest>,
 ) -> Result<Json<SpendCapStatusResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
@@ -1242,21 +1346,30 @@ pub async fn set_spend_cap(
     // SOC 2 CC6.1: Input validation prevents unreasonable values
     const MAX_SPEND_CAP_CENTS: i32 = 100_000_00; // $100,000
     if req.cap_amount_cents < 1000 {
-        return Err(ApiError::BadRequest("Spend cap must be at least $10.00".to_string()));
+        return Err(ApiError::BadRequest(
+            "Spend cap must be at least $10.00".to_string(),
+        ));
     }
     if req.cap_amount_cents > MAX_SPEND_CAP_CENTS {
-        return Err(ApiError::BadRequest("Spend cap cannot exceed $100,000.00".to_string()));
+        return Err(ApiError::BadRequest(
+            "Spend cap cannot exceed $100,000.00".to_string(),
+        ));
     }
 
-    let cap = billing.spend_cap
-        .set_spend_cap(org_id, plexmcp_billing::SpendCapRequest {
-            cap_amount_cents: req.cap_amount_cents,
-            hard_pause_enabled: req.hard_pause_enabled,
-        })
+    let cap = billing
+        .spend_cap
+        .set_spend_cap(
+            org_id,
+            plexmcp_billing::SpendCapRequest {
+                cap_amount_cents: req.cap_amount_cents,
+                hard_pause_enabled: req.hard_pause_enabled,
+            },
+        )
         .await
         .map_err(|e| ApiError::Database(format!("Failed to set spend cap: {}", e)))?;
 
-    let has_override = cap.override_until
+    let has_override = cap
+        .override_until
         .map(|t| t > OffsetDateTime::now_utc())
         .unwrap_or(false);
 
@@ -1272,11 +1385,13 @@ pub async fn set_spend_cap(
         hard_pause_enabled: cap.hard_pause_enabled,
         is_paused: cap.is_paused && !has_override,
         paused_at: cap.paused_at.map(|t| {
-            t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
         }),
         has_override,
         override_until: cap.override_until.map(|t| {
-            t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
         }),
     }))
 }
@@ -1286,12 +1401,12 @@ pub async fn remove_spend_cap(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<StatusCode, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
-    billing.spend_cap
+    billing
+        .spend_cap
         .remove_spend_cap(org_id)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to remove spend cap: {}", e)))?;
@@ -1336,8 +1451,7 @@ pub async fn get_accumulated_overage(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<AccumulatedOverageResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
@@ -1351,7 +1465,8 @@ pub async fn get_accumulated_overage(
         );
     }
 
-    let overage = billing.overage
+    let overage = billing
+        .overage
         .get_accumulated_overage(org_id)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to get accumulated overage: {}", e)))?;
@@ -1368,8 +1483,7 @@ pub async fn pay_overages_now(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<PayNowResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
     let email = auth_user.email.as_deref().unwrap_or("");
@@ -1377,7 +1491,8 @@ pub async fn pay_overages_now(
     // Get customer ID
     let customer_id = get_or_create_customer(&state, billing, org_id, email).await?;
 
-    let result = billing.overage
+    let result = billing
+        .overage
         .pay_overages_now(org_id, &customer_id)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to process pay now: {}", e)))?;
@@ -1386,20 +1501,24 @@ pub async fn pay_overages_now(
         plexmcp_billing::PayNowResult::NoPendingCharges => {
             Ok(Json(PayNowResponse::NoPendingCharges))
         }
-        plexmcp_billing::PayNowResult::PaymentRequired { checkout_session_id, checkout_url, amount_cents, charge_count } => {
-            Ok(Json(PayNowResponse::PaymentRequired {
-                checkout_session_id,
-                checkout_url,
-                amount_cents,
-                charge_count,
-            }))
-        }
-        plexmcp_billing::PayNowResult::AlreadyPaid { amount_cents, charge_count } => {
-            Ok(Json(PayNowResponse::AlreadyPaid {
-                amount_cents,
-                charge_count,
-            }))
-        }
+        plexmcp_billing::PayNowResult::PaymentRequired {
+            checkout_session_id,
+            checkout_url,
+            amount_cents,
+            charge_count,
+        } => Ok(Json(PayNowResponse::PaymentRequired {
+            checkout_session_id,
+            checkout_url,
+            amount_cents,
+            charge_count,
+        })),
+        plexmcp_billing::PayNowResult::AlreadyPaid {
+            amount_cents,
+            charge_count,
+        } => Ok(Json(PayNowResponse::AlreadyPaid {
+            amount_cents,
+            charge_count,
+        })),
     }
 }
 
@@ -1424,31 +1543,34 @@ pub async fn get_instant_charges(
     Extension(auth_user): Extension<AuthUser>,
     Query(query): Query<OveragesQuery>,
 ) -> Result<Json<Vec<InstantChargeResponse>>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
     let limit = query.limit.unwrap_or(20);
 
-    let charges = billing.instant_charge
+    let charges = billing
+        .instant_charge
         .get_charges(org_id, limit)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to get instant charges: {}", e)))?;
 
-    let responses: Vec<InstantChargeResponse> = charges.into_iter().map(|c| {
-        InstantChargeResponse {
+    let responses: Vec<InstantChargeResponse> = charges
+        .into_iter()
+        .map(|c| InstantChargeResponse {
             id: c.id.to_string(),
             amount_cents: c.amount_cents,
             overage_at_charge: c.overage_at_charge,
             status: c.status,
-            created_at: c.created_at
+            created_at: c
+                .created_at
                 .format(&time::format_description::well_known::Rfc3339)
                 .unwrap_or_default(),
             paid_at: c.paid_at.map(|t| {
-                t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default()
             }),
-        }
-    }).collect();
+        })
+        .collect();
 
     Ok(Json(responses))
 }
@@ -1498,13 +1620,13 @@ pub async fn schedule_downgrade(
     Extension(auth_user): Extension<AuthUser>,
     Json(req): Json<ScheduleDowngradeRequest>,
 ) -> Result<Json<ScheduleDowngradeResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
     let user_id = auth_user.user_id;
 
-    let result = billing.subscriptions
+    let result = billing
+        .subscriptions
         .schedule_downgrade(org_id, &req.tier)
         .await
         .map_err(|e| {
@@ -1525,7 +1647,7 @@ pub async fn schedule_downgrade(
         r#"INSERT INTO admin_audit_log (
             admin_user_id, action, target_type, target_id, details,
             event_type, severity
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)"#
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
     )
     .bind(user_id)
     .bind(admin_action::SUBSCRIPTION_CHANGED)
@@ -1538,7 +1660,8 @@ pub async fn schedule_downgrade(
     .await;
 
     // Check if any members will be affected by the downgrade
-    let affected_members = billing.member_suspension
+    let affected_members = billing
+        .member_suspension
         .get_affected_members_info(org_id, &req.tier)
         .await
         .ok()
@@ -1547,7 +1670,8 @@ pub async fn schedule_downgrade(
             current_count: info.current_count,
             new_limit: info.new_limit,
             excess_count: info.excess_count,
-            members_to_suspend: info.members_to_suspend
+            members_to_suspend: info
+                .members_to_suspend
                 .into_iter()
                 .map(|m| AffectedMemberSummary {
                     email: m.email,
@@ -1559,9 +1683,7 @@ pub async fn schedule_downgrade(
     let affected_msg = if let Some(ref affected) = affected_members {
         format!(
             " {} team member(s) will be set to read-only access due to the {} tier limit of {}.",
-            affected.excess_count,
-            result.new_tier,
-            affected.new_limit
+            affected.excess_count, result.new_tier, affected.new_limit
         )
     } else {
         String::new()
@@ -1601,12 +1723,12 @@ pub async fn cancel_scheduled_downgrade(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<StatusCode, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
-    billing.subscriptions
+    billing
+        .subscriptions
         .cancel_scheduled_downgrade(org_id)
         .await
         .map_err(|e| {
@@ -1629,33 +1751,37 @@ pub async fn get_scheduled_downgrade(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<Option<ScheduleDowngradeResponse>>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
-    let result = billing.subscriptions
+    let result = billing
+        .subscriptions
         .get_scheduled_downgrade(org_id)
         .await
         .map_err(|e| ApiError::Database(format!("Failed to get scheduled downgrade: {}", e)))?;
 
     // For get_scheduled_downgrade, we don't compute affected_members since it's just a status check
     // The schedule_downgrade endpoint returns affected_members when scheduling
-    Ok(Json(result.map(|d| ScheduleDowngradeResponse {
-        current_tier: d.current_tier.clone(),
-        new_tier: d.new_tier.clone(),
-        effective_date: d.effective_date
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_default(),
-        message: format!(
-            "Your subscription will change from {} to {} on {}.",
-            d.current_tier,
-            d.new_tier,
-            time::format_description::parse("[month repr:long] [day], [year]").ok()
-                .and_then(|desc| d.effective_date.format(&desc).ok())
-                .unwrap_or_else(|| "Unknown date".to_string())
-        ),
-        affected_members: None,
+    Ok(Json(result.map(|d| {
+        ScheduleDowngradeResponse {
+            current_tier: d.current_tier.clone(),
+            new_tier: d.new_tier.clone(),
+            effective_date: d
+                .effective_date
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default(),
+            message: format!(
+                "Your subscription will change from {} to {} on {}.",
+                d.current_tier,
+                d.new_tier,
+                time::format_description::parse("[month repr:long] [day], [year]")
+                    .ok()
+                    .and_then(|desc| d.effective_date.format(&desc).ok())
+                    .unwrap_or_else(|| "Unknown date".to_string())
+            ),
+            affected_members: None,
+        }
     })))
 }
 
@@ -1776,9 +1902,7 @@ pub enum PayInvoiceResponse {
     #[serde(rename = "already_paid")]
     AlreadyPaid,
     #[serde(rename = "payment_initiated")]
-    PaymentInitiated {
-        hosted_invoice_url: String,
-    },
+    PaymentInitiated { hosted_invoice_url: String },
     #[serde(rename = "payment_succeeded")]
     PaymentSucceeded {
         invoice_id: String,
@@ -1877,13 +2001,11 @@ pub async fn list_invoices(
     tracing::info!(count = %invoices.len(), "list_invoices: got invoices from database");
 
     // Get total count
-    let total_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM invoices WHERE org_id = $1"
-    )
-    .bind(org_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|e| ApiError::Database(format!("Failed to count invoices: {}", e)))?;
+    let total_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM invoices WHERE org_id = $1")
+        .bind(org_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| ApiError::Database(format!("Failed to count invoices: {}", e)))?;
 
     // Calculate outstanding and overdue amounts
     let amounts: (Option<i64>, Option<i64>) = sqlx::query_as(
@@ -1900,10 +2022,16 @@ pub async fn list_invoices(
     .await
     .map_err(|e| ApiError::Database(format!("Failed to calculate amounts: {}", e)))?;
 
-    let invoice_items: Vec<InvoiceListItem> = invoices.into_iter().map(|row| {
-        InvoiceListItem {
+    let invoice_items: Vec<InvoiceListItem> = invoices
+        .into_iter()
+        .map(|row| InvoiceListItem {
             id: row.0.to_string(),
-            invoice_number: row.1.unwrap_or_else(|| format!("INV-{}", row.0.to_string().split('-').next().unwrap_or("UNKNOWN"))),
+            invoice_number: row.1.unwrap_or_else(|| {
+                format!(
+                    "INV-{}",
+                    row.0.to_string().split('-').next().unwrap_or("UNKNOWN")
+                )
+            }),
             stripe_invoice_id: row.2,
             amount_cents: row.3,
             amount_due_cents: row.4.unwrap_or(0),
@@ -1911,14 +2039,26 @@ pub async fn list_invoices(
             currency: row.6,
             status: row.7,
             description: row.8,
-            due_date: row.9.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
-            paid_at: row.10.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
-            grace_period_ends_at: row.11.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
+            due_date: row.9.map(|t| {
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default()
+            }),
+            paid_at: row.10.map(|t| {
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default()
+            }),
+            grace_period_ends_at: row.11.map(|t| {
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default()
+            }),
             invoice_pdf_url: row.12,
             hosted_invoice_url: row.13,
-            created_at: row.14.format(&time::format_description::well_known::Rfc3339).unwrap_or_default(),
-        }
-    }).collect();
+            created_at: row
+                .14
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default(),
+        })
+        .collect();
 
     Ok(Json(InvoiceListResponse {
         invoices: invoice_items,
@@ -1995,14 +2135,25 @@ pub async fn get_invoice_detail(
 
     // Fetch line items
     #[allow(clippy::type_complexity)]
-    let line_items: Vec<(Uuid, String, i32, i32, i32, String, bool, Option<String>, Option<OffsetDateTime>, Option<OffsetDateTime>)> = sqlx::query_as(
+    let line_items: Vec<(
+        Uuid,
+        String,
+        i32,
+        i32,
+        i32,
+        String,
+        bool,
+        Option<String>,
+        Option<OffsetDateTime>,
+        Option<OffsetDateTime>,
+    )> = sqlx::query_as(
         r#"
         SELECT id, description, quantity, unit_amount_cents, amount_cents,
                currency, proration, product_name, period_start, period_end
         FROM invoice_line_items
         WHERE invoice_id = $1
         ORDER BY created_at ASC
-        "#
+        "#,
     )
     .bind(invoice_id)
     .fetch_all(&state.pool)
@@ -2011,21 +2162,30 @@ pub async fn get_invoice_detail(
 
     // Fetch payment attempts
     #[allow(clippy::type_complexity)]
-    let payment_attempts: Vec<(Uuid, i32, String, String, Option<String>, Option<String>, OffsetDateTime)> = sqlx::query_as(
+    let payment_attempts: Vec<(
+        Uuid,
+        i32,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        OffsetDateTime,
+    )> = sqlx::query_as(
         r#"
         SELECT id, amount_cents, currency, status, failure_code, failure_message, created_at
         FROM payment_attempts
         WHERE invoice_id = $1
         ORDER BY created_at DESC
-        "#
+        "#,
     )
     .bind(invoice_id)
     .fetch_all(&state.pool)
     .await
     .unwrap_or_default();
 
-    let line_item_responses: Vec<InvoiceLineItemResponse> = line_items.into_iter().map(|row| {
-        InvoiceLineItemResponse {
+    let line_item_responses: Vec<InvoiceLineItemResponse> = line_items
+        .into_iter()
+        .map(|row| InvoiceLineItemResponse {
             id: row.0.to_string(),
             description: row.1,
             quantity: row.2,
@@ -2034,27 +2194,47 @@ pub async fn get_invoice_detail(
             currency: row.5,
             proration: row.6,
             product_name: row.7,
-            period_start: row.8.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
-            period_end: row.9.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
-        }
-    }).collect();
+            period_start: row.8.map(|t| {
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default()
+            }),
+            period_end: row.9.map(|t| {
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default()
+            }),
+        })
+        .collect();
 
-    let payment_attempt_responses: Vec<PaymentAttemptResponse> = payment_attempts.into_iter().map(|row| {
-        PaymentAttemptResponse {
+    let payment_attempt_responses: Vec<PaymentAttemptResponse> = payment_attempts
+        .into_iter()
+        .map(|row| PaymentAttemptResponse {
             id: row.0.to_string(),
             amount_cents: row.1,
             currency: row.2,
             status: row.3,
             failure_code: row.4,
             failure_message: row.5,
-            created_at: row.6.format(&time::format_description::well_known::Rfc3339).unwrap_or_default(),
-        }
-    }).collect();
+            created_at: row
+                .6
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default(),
+        })
+        .collect();
 
     Ok(Json(InvoiceDetailResponse {
         invoice: InvoiceListItem {
             id: invoice.id.to_string(),
-            invoice_number: invoice.invoice_number.unwrap_or_else(|| format!("INV-{}", invoice.id.to_string().split('-').next().unwrap_or("UNKNOWN"))),
+            invoice_number: invoice.invoice_number.unwrap_or_else(|| {
+                format!(
+                    "INV-{}",
+                    invoice
+                        .id
+                        .to_string()
+                        .split('-')
+                        .next()
+                        .unwrap_or("UNKNOWN")
+                )
+            }),
             stripe_invoice_id: invoice.stripe_invoice_id.clone(),
             amount_cents: invoice.amount_cents,
             amount_due_cents: invoice.amount_due_cents.unwrap_or(0),
@@ -2062,17 +2242,35 @@ pub async fn get_invoice_detail(
             currency: invoice.currency.clone(),
             status: invoice.status.clone(),
             description: invoice.description.clone(),
-            due_date: invoice.due_date.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
-            paid_at: invoice.paid_at.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
-            grace_period_ends_at: invoice.grace_period_ends_at.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
+            due_date: invoice.due_date.map(|t| {
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default()
+            }),
+            paid_at: invoice.paid_at.map(|t| {
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default()
+            }),
+            grace_period_ends_at: invoice.grace_period_ends_at.map(|t| {
+                t.format(&time::format_description::well_known::Rfc3339)
+                    .unwrap_or_default()
+            }),
             invoice_pdf_url: invoice.invoice_pdf_url.clone(),
             hosted_invoice_url: invoice.hosted_invoice_url.clone(),
-            created_at: invoice.created_at.format(&time::format_description::well_known::Rfc3339).unwrap_or_default(),
+            created_at: invoice
+                .created_at
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default(),
         },
         line_items: line_item_responses,
         payment_attempts: payment_attempt_responses,
-        period_start: invoice.period_start.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
-        period_end: invoice.period_end.map(|t| t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
+        period_start: invoice.period_start.map(|t| {
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
+        }),
+        period_end: invoice.period_end.map(|t| {
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
+        }),
         billing_reason: invoice.billing_reason,
     }))
 }
@@ -2085,8 +2283,7 @@ pub async fn pay_invoice(
     Extension(auth_user): Extension<AuthUser>,
     axum::extract::Path(invoice_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<PayInvoiceResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
@@ -2126,7 +2323,8 @@ pub async fn pay_invoice(
 
     // Try to pay the invoice via Stripe
     let stripe = billing.subscriptions.stripe();
-    let invoice_id_parsed: InvoiceId = stripe_inv_id.parse()
+    let invoice_id_parsed: InvoiceId = stripe_inv_id
+        .parse()
         .map_err(|_| ApiError::BadRequest("Invalid Stripe invoice ID".to_string()))?;
 
     // Retrieve the invoice to get the hosted URL
@@ -2189,7 +2387,13 @@ pub async fn create_invoice_dispute(
     }
 
     // Validate reason
-    let valid_reasons = ["billing_error", "duplicate_charge", "service_issue", "incorrect_amount", "other"];
+    let valid_reasons = [
+        "billing_error",
+        "duplicate_charge",
+        "service_issue",
+        "incorrect_amount",
+        "other",
+    ];
     if !valid_reasons.contains(&req.reason.as_str()) {
         return Err(ApiError::BadRequest(format!(
             "Invalid reason. Must be one of: {}",
@@ -2198,30 +2402,30 @@ pub async fn create_invoice_dispute(
     }
 
     // Verify invoice exists and belongs to org
-    let exists: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM invoices WHERE id = $1 AND org_id = $2"
-    )
-    .bind(invoice_id)
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| ApiError::Database(format!("Failed to verify invoice: {}", e)))?;
+    let exists: Option<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM invoices WHERE id = $1 AND org_id = $2")
+            .bind(invoice_id)
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| ApiError::Database(format!("Failed to verify invoice: {}", e)))?;
 
     if exists.is_none() {
         return Err(ApiError::NotFound);
     }
 
     // Check for existing open dispute
-    let existing: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM invoice_disputes WHERE invoice_id = $1 AND status = 'open'"
-    )
-    .bind(invoice_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| ApiError::Database(format!("Failed to check existing disputes: {}", e)))?;
+    let existing: Option<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM invoice_disputes WHERE invoice_id = $1 AND status = 'open'")
+            .bind(invoice_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| ApiError::Database(format!("Failed to check existing disputes: {}", e)))?;
 
     if existing.is_some() {
-        return Err(ApiError::BadRequest("An open dispute already exists for this invoice".to_string()));
+        return Err(ApiError::BadRequest(
+            "An open dispute already exists for this invoice".to_string(),
+        ));
     }
 
     // Create dispute
@@ -2259,7 +2463,9 @@ pub async fn create_invoice_dispute(
         reason: req.reason,
         description: req.description,
         status: "open".to_string(),
-        created_at: now.format(&time::format_description::well_known::Rfc3339).unwrap_or_default(),
+        created_at: now
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_default(),
     }))
 }
 
@@ -2277,8 +2483,7 @@ pub async fn sync_invoices(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<SyncInvoicesResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
@@ -2295,14 +2500,16 @@ pub async fn sync_invoices(
     }
 
     // Get customer ID for the org
-    let customer_id = get_customer_id(&state, org_id).await?
-        .ok_or_else(|| ApiError::BadRequest("No Stripe customer found for this organization".to_string()))?;
+    let customer_id = get_customer_id(&state, org_id).await?.ok_or_else(|| {
+        ApiError::BadRequest("No Stripe customer found for this organization".to_string())
+    })?;
 
     tracing::info!(org_id = %org_id, customer_id = %customer_id, "Syncing invoices from Stripe");
 
     // Fetch invoices from Stripe
     let stripe = billing.subscriptions.stripe();
-    let customer_id_parsed: stripe::CustomerId = customer_id.parse()
+    let customer_id_parsed: stripe::CustomerId = customer_id
+        .parse()
         .map_err(|_| ApiError::BadRequest("Invalid customer ID".to_string()))?;
 
     let invoices = stripe::Invoice::list(
@@ -2311,7 +2518,7 @@ pub async fn sync_invoices(
             customer: Some(customer_id_parsed),
             limit: Some(100),
             ..Default::default()
-        }
+        },
     )
     .await
     .map_err(|e| ApiError::Database(format!("Failed to fetch invoices from Stripe: {}", e)))?;
@@ -2323,7 +2530,10 @@ pub async fn sync_invoices(
         let amount_cents = inv.amount_due.unwrap_or(0) as i32;
         let amount_due_cents = inv.amount_remaining.unwrap_or(0) as i32;
         let amount_paid_cents = inv.amount_paid.unwrap_or(0) as i32;
-        let currency = inv.currency.map(|c| c.to_string()).unwrap_or_else(|| "usd".to_string());
+        let currency = inv
+            .currency
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "usd".to_string());
 
         // Map Stripe status to our status
         let status = match inv.status {
@@ -2336,11 +2546,12 @@ pub async fn sync_invoices(
         };
 
         let description = inv.description.clone();
-        let due_date = inv.due_date.and_then(|ts| {
-            OffsetDateTime::from_unix_timestamp(ts).ok()
-        });
+        let due_date = inv
+            .due_date
+            .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok());
         let paid_at = if status == "paid" {
-            inv.status_transitions.as_ref()
+            inv.status_transitions
+                .as_ref()
                 .and_then(|st| st.paid_at)
                 .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok())
         } else {
@@ -2348,9 +2559,15 @@ pub async fn sync_invoices(
         };
         let invoice_pdf_url = inv.invoice_pdf.clone();
         let hosted_invoice_url = inv.hosted_invoice_url.clone();
-        let period_start = inv.period_start.and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok());
-        let period_end = inv.period_end.and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok());
-        let billing_reason = inv.billing_reason.map(|r| format!("{:?}", r).to_lowercase());
+        let period_start = inv
+            .period_start
+            .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok());
+        let period_end = inv
+            .period_end
+            .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok());
+        let billing_reason = inv
+            .billing_reason
+            .map(|r| format!("{:?}", r).to_lowercase());
         let created_at = OffsetDateTime::from_unix_timestamp(inv.created.unwrap_or(0))
             .unwrap_or_else(|_| OffsetDateTime::now_utc());
 
@@ -2407,14 +2624,13 @@ pub async fn sync_invoices(
         // Also sync line items for this invoice
         if let Some(lines) = inv.lines {
             // Get the invoice DB ID first
-            let invoice_db_id: Option<(Uuid,)> = sqlx::query_as(
-                "SELECT id FROM invoices WHERE stripe_invoice_id = $1"
-            )
-            .bind(&stripe_invoice_id)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten();
+            let invoice_db_id: Option<(Uuid,)> =
+                sqlx::query_as("SELECT id FROM invoices WHERE stripe_invoice_id = $1")
+                    .bind(&stripe_invoice_id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .ok()
+                    .flatten();
 
             if let Some((inv_id,)) = invoice_db_id {
                 // Delete existing line items and re-insert (simpler than upsert without unique constraint)
@@ -2425,23 +2641,36 @@ pub async fn sync_invoices(
 
                 for line in lines.data {
                     let line_item_id = line.id.to_string();
-                    let line_description = line.description.clone().unwrap_or_else(|| "Invoice item".to_string());
+                    let line_description = line
+                        .description
+                        .clone()
+                        .unwrap_or_else(|| "Invoice item".to_string());
                     let quantity = line.quantity.unwrap_or(1) as i32;
                     // Calculate unit amount from total / quantity
                     let line_amount = line.amount as i32;
-                    let unit_amount = if quantity > 0 { line_amount / quantity } else { line_amount };
+                    let unit_amount = if quantity > 0 {
+                        line_amount / quantity
+                    } else {
+                        line_amount
+                    };
                     let line_currency = line.currency.to_string();
                     let proration = line.proration;
-                    let product_name = line.price.as_ref()
+                    let product_name = line
+                        .price
+                        .as_ref()
                         .and_then(|p| p.product.as_ref())
                         .and_then(|prod| match prod {
                             stripe::Expandable::Object(p) => p.name.clone(),
                             _ => None,
                         });
-                    let line_period_start = line.period.as_ref()
+                    let line_period_start = line
+                        .period
+                        .as_ref()
                         .and_then(|p| p.start)
                         .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok());
-                    let line_period_end = line.period.as_ref()
+                    let line_period_end = line
+                        .period
+                        .as_ref()
                         .and_then(|p| p.end)
                         .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok());
 
@@ -2452,7 +2681,7 @@ pub async fn sync_invoices(
                             unit_amount_cents, amount_cents, currency, proration, product_name,
                             period_start, period_end
                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                        "#
+                        "#,
                     )
                     .bind(inv_id)
                     .bind(&line_item_id)
@@ -2488,13 +2717,12 @@ pub async fn get_grace_period_status(
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
     // Check if org is blocked
-    let org_status: Option<(Option<OffsetDateTime>,)> = sqlx::query_as(
-        "SELECT billing_blocked_at FROM organizations WHERE id = $1"
-    )
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| ApiError::Database(format!("Failed to get org status: {}", e)))?;
+    let org_status: Option<(Option<OffsetDateTime>,)> =
+        sqlx::query_as("SELECT billing_blocked_at FROM organizations WHERE id = $1")
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| ApiError::Database(format!("Failed to get org status: {}", e)))?;
 
     let blocked_at = org_status.and_then(|(t,)| t);
     let is_blocked = blocked_at.is_some();
@@ -2510,7 +2738,7 @@ pub async fn get_grace_period_status(
         WHERE org_id = $1
           AND status IN ('open', 'uncollectible')
           AND due_date < NOW()
-        "#
+        "#,
     )
     .bind(org_id)
     .fetch_one(&state.pool)
@@ -2539,10 +2767,12 @@ pub async fn get_grace_period_status(
         is_blocked,
         days_remaining,
         grace_period_ends_at: earliest_grace_period_end.map(|t| {
-            t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
         }),
         blocked_at: blocked_at.map(|t| {
-            t.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()
+            t.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
         }),
         overdue_invoice_count: overdue_count,
         overdue_amount_cents: overdue_amount,

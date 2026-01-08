@@ -1,9 +1,7 @@
 //! Stripe customer management
 
 use sqlx::PgPool;
-use stripe::{
-    CreateCustomer, Customer, CustomerId, UpdateCustomer,
-};
+use stripe::{CreateCustomer, Customer, CustomerId, UpdateCustomer};
 use uuid::Uuid;
 
 use crate::client::StripeClient;
@@ -28,20 +26,19 @@ impl CustomerService {
         name: &str,
     ) -> BillingResult<Customer> {
         // Check if org already has a Stripe customer ID
-        let existing: Option<(Option<String>,)> = sqlx::query_as(
-            "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let existing: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         if let Some((Some(customer_id),)) = existing {
             // Retrieve existing customer
-            let customer_id = customer_id.parse::<CustomerId>()
+            let customer_id = customer_id
+                .parse::<CustomerId>()
                 .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
-            let customer = Customer::retrieve(self.stripe.inner(), &customer_id, &[])
-                .await?;
+            let customer = Customer::retrieve(self.stripe.inner(), &customer_id, &[]).await?;
 
             return Ok(customer);
         }
@@ -73,7 +70,7 @@ impl CustomerService {
 
         // Store customer ID in database
         sqlx::query(
-            "UPDATE organizations SET stripe_customer_id = $1, updated_at = NOW() WHERE id = $2"
+            "UPDATE organizations SET stripe_customer_id = $1, updated_at = NOW() WHERE id = $2",
         )
         .bind(customer.id.as_str())
         .bind(org_id)
@@ -120,30 +117,27 @@ impl CustomerService {
 
     /// Get the Stripe customer ID for an organization
     pub async fn get_customer_id(&self, org_id: Uuid) -> BillingResult<CustomerId> {
-        let result: Option<(Option<String>,)> = sqlx::query_as(
-            "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let result: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         match result {
-            Some((Some(id),)) => {
-                id.parse::<CustomerId>()
-                    .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))
-            }
+            Some((Some(id),)) => id
+                .parse::<CustomerId>()
+                .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e))),
             _ => Err(BillingError::CustomerNotFound(org_id.to_string())),
         }
     }
 
     /// Check if an organization has a Stripe customer
     pub async fn has_customer(&self, org_id: Uuid) -> BillingResult<bool> {
-        let result: Option<(Option<String>,)> = sqlx::query_as(
-            "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let result: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         Ok(matches!(result, Some((Some(_),))))
     }
@@ -151,12 +145,11 @@ impl CustomerService {
     /// Check if an organization has a payment method on file in Stripe
     pub async fn has_payment_method(&self, org_id: Uuid) -> BillingResult<bool> {
         // First check if they have a customer
-        let result: Option<(Option<String>,)> = sqlx::query_as(
-            "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let result: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         let customer_id_str = match result {
             Some((Some(id),)) => id,
@@ -164,14 +157,15 @@ impl CustomerService {
         };
 
         // Parse customer ID and retrieve from Stripe
-        let customer_id = customer_id_str.parse::<CustomerId>()
+        let customer_id = customer_id_str
+            .parse::<CustomerId>()
             .map_err(|e| BillingError::StripeApi(format!("Invalid customer ID: {}", e)))?;
 
-        let customer = Customer::retrieve(self.stripe.inner(), &customer_id, &[])
-            .await?;
+        let customer = Customer::retrieve(self.stripe.inner(), &customer_id, &[]).await?;
 
         // Check if customer has a default payment method set
-        let has_pm = customer.invoice_settings
+        let has_pm = customer
+            .invoice_settings
             .and_then(|settings| settings.default_payment_method)
             .is_some();
 

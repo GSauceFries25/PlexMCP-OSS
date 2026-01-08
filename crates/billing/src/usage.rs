@@ -71,7 +71,7 @@ impl UsageMeter {
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
             )
-            "#
+            "#,
         )
         .bind(Uuid::new_v4())
         .bind(event.org_id)
@@ -136,7 +136,7 @@ impl UsageMeter {
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
                 )
-                "#
+                "#,
             )
             .bind(Uuid::new_v4())
             .bind(event.org_id)
@@ -195,7 +195,7 @@ impl UsageMeter {
             WHERE org_id = $1
               AND period_start >= $2
               AND period_start < $3
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(start)
@@ -221,11 +221,17 @@ impl UsageMeter {
     }
 
     /// Get current month's usage for billing
-    pub async fn get_billing_period_usage(&self, org_id: Uuid) -> BillingResult<BillingPeriodUsage> {
+    pub async fn get_billing_period_usage(
+        &self,
+        org_id: Uuid,
+    ) -> BillingResult<BillingPeriodUsage> {
         // Get current billing period (first of month to now)
         let now = OffsetDateTime::now_utc();
-        let period_start = now.replace_day(1)
-            .map_err(|e| BillingError::Database(format!("Failed to set billing period start: {}", e)))?
+        let period_start = now
+            .replace_day(1)
+            .map_err(|e| {
+                BillingError::Database(format!("Failed to set billing period start: {}", e))
+            })?
             .replace_time(time::Time::MIDNIGHT);
         let period_end = now;
 
@@ -237,12 +243,11 @@ impl UsageMeter {
         );
 
         // Get org's subscription tier
-        let tier_result: Option<(String,)> = sqlx::query_as(
-            "SELECT subscription_tier FROM organizations WHERE id = $1"
-        )
-        .bind(org_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        let tier_result: Option<(String,)> =
+            sqlx::query_as("SELECT subscription_tier FROM organizations WHERE id = $1")
+                .bind(org_id)
+                .fetch_optional(&self.pool)
+                .await?;
 
         let tier: SubscriptionTier = tier_result
             .map(|(t,)| t.parse().unwrap_or(SubscriptionTier::Free))
@@ -255,7 +260,9 @@ impl UsageMeter {
         );
 
         // Get usage for the period
-        let summary = self.get_usage_summary(org_id, period_start, period_end).await?;
+        let summary = self
+            .get_usage_summary(org_id, period_start, period_end)
+            .await?;
 
         tracing::info!(
             org_id = %org_id,
@@ -304,7 +311,7 @@ impl UsageMeter {
             WHERE org_id = $1
               AND period_start >= $2
               AND period_start < $3
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(start)
@@ -337,7 +344,7 @@ impl UsageMeter {
               AND ur.api_key_id IS NOT NULL
             GROUP BY ur.api_key_id, ak.name
             ORDER BY request_count DESC
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(start)
@@ -345,14 +352,15 @@ impl UsageMeter {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(results.into_iter().map(|(id, name, requests, tokens)| {
-            ApiKeyUsageBreakdown {
+        Ok(results
+            .into_iter()
+            .map(|(id, name, requests, tokens)| ApiKeyUsageBreakdown {
                 api_key_id: id,
                 api_key_name: name,
                 request_count: requests,
                 token_count: tokens,
-            }
-        }).collect())
+            })
+            .collect())
     }
 
     /// Get usage breakdown by MCP instance
@@ -390,7 +398,7 @@ impl UsageMeter {
               AND ur.mcp_instance_id IS NOT NULL
             GROUP BY ur.mcp_instance_id, mi.name, logs.error_count, logs.avg_latency_ms
             ORDER BY request_count DESC
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(start)
@@ -398,16 +406,19 @@ impl UsageMeter {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(results.into_iter().map(|(id, name, requests, tokens, errors, latency)| {
-            McpUsageBreakdown {
-                mcp_instance_id: id,
-                mcp_name: name,
-                request_count: requests,
-                token_count: tokens,
-                error_count: errors,
-                avg_latency_ms: latency,
-            }
-        }).collect())
+        Ok(results
+            .into_iter()
+            .map(
+                |(id, name, requests, tokens, errors, latency)| McpUsageBreakdown {
+                    mcp_instance_id: id,
+                    mcp_name: name,
+                    request_count: requests,
+                    token_count: tokens,
+                    error_count: errors,
+                    avg_latency_ms: latency,
+                },
+            )
+            .collect())
     }
 
     /// Get hourly usage for charts
@@ -429,7 +440,7 @@ impl UsageMeter {
               AND period_hour >= $2
               AND period_hour <= $3
             ORDER BY period_hour ASC
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(start)
@@ -437,14 +448,15 @@ impl UsageMeter {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(results.into_iter().map(|(hour, requests, tokens, errors)| {
-            HourlyUsage {
+        Ok(results
+            .into_iter()
+            .map(|(hour, requests, tokens, errors)| HourlyUsage {
                 hour,
                 requests,
                 tokens,
                 errors,
-            }
-        }).collect())
+            })
+            .collect())
     }
 
     /// Aggregate usage records into hourly rollups (run periodically)
@@ -468,7 +480,7 @@ impl UsageMeter {
             WHERE org_id = $1
               AND period_start >= $2
               AND period_start < $3
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(hour_start)
@@ -492,7 +504,7 @@ impl UsageMeter {
                 avg_latency_ms = EXCLUDED.avg_latency_ms,
                 unique_api_keys = EXCLUDED.unique_api_keys,
                 unique_mcps = EXCLUDED.unique_mcps
-            "#
+            "#,
         )
         .bind(Uuid::new_v4())
         .bind(org_id)
@@ -518,7 +530,7 @@ impl UsageMeter {
             SELECT DISTINCT org_id, date_trunc('hour', period_start) as hour
             FROM usage_records
             WHERE period_start >= NOW() - INTERVAL '2 hours'
-            "#
+            "#,
         )
         .fetch_all(&self.pool)
         .await?;
@@ -531,7 +543,10 @@ impl UsageMeter {
             }
         }
 
-        tracing::info!(aggregated_count = count, "Completed hourly usage aggregation");
+        tracing::info!(
+            aggregated_count = count,
+            "Completed hourly usage aggregation"
+        );
         Ok(count)
     }
 }

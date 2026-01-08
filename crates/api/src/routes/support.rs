@@ -227,23 +227,24 @@ impl From<MessageRow> for TicketMessage {
 // =============================================================================
 
 /// Resolve the actual user_id and organization_id for the authenticated user.
-async fn resolve_user_context(pool: &PgPool, auth_user: &AuthUser) -> Result<(Uuid, Option<Uuid>), ApiError> {
+async fn resolve_user_context(
+    pool: &PgPool,
+    auth_user: &AuthUser,
+) -> Result<(Uuid, Option<Uuid>), ApiError> {
     let auth_user_id = auth_user.user_id.ok_or(ApiError::Unauthorized)?;
 
     // For Supabase JWT users, look up by email if ID doesn't exist
     if matches!(auth_user.auth_method, AuthMethod::SupabaseJwt) {
         // Check if user exists
-        let exists: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM users WHERE id = $1"
-        )
-        .bind(auth_user_id)
-        .fetch_optional(pool)
-        .await?;
+        let exists: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE id = $1")
+            .bind(auth_user_id)
+            .fetch_optional(pool)
+            .await?;
 
         if exists.is_some() {
             // Get org membership (organization_members uses org_id, not organization_id)
             let org: Option<(Uuid,)> = sqlx::query_as(
-                "SELECT org_id FROM organization_members WHERE user_id = $1 LIMIT 1"
+                "SELECT org_id FROM organization_members WHERE user_id = $1 LIMIT 1",
             )
             .bind(auth_user_id)
             .fetch_optional(pool)
@@ -254,17 +255,15 @@ async fn resolve_user_context(pool: &PgPool, auth_user: &AuthUser) -> Result<(Uu
 
         // Look up by email
         if let Some(ref email) = auth_user.email {
-            let user: Option<(Uuid,)> = sqlx::query_as(
-                "SELECT id FROM users WHERE email = $1"
-            )
-            .bind(email)
-            .fetch_optional(pool)
-            .await?;
+            let user: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE email = $1")
+                .bind(email)
+                .fetch_optional(pool)
+                .await?;
 
             if let Some((user_id,)) = user {
                 // organization_members uses org_id, not organization_id
                 let org: Option<(Uuid,)> = sqlx::query_as(
-                    "SELECT org_id FROM organization_members WHERE user_id = $1 LIMIT 1"
+                    "SELECT org_id FROM organization_members WHERE user_id = $1 LIMIT 1",
                 )
                 .bind(user_id)
                 .fetch_optional(pool)
@@ -299,9 +298,10 @@ pub async fn create_ticket(
             Ok(result) if !result.allowed => {
                 tracing::warn!(org_id = %oid, "create_ticket: Rate limit exceeded for organization");
                 let retry_after = result.retry_after_seconds.unwrap_or(60);
-                return Err(ApiError::TooManyRequests(
-                    format!("Too many support tickets created. Please try again in {} seconds.", retry_after)
-                ));
+                return Err(ApiError::TooManyRequests(format!(
+                    "Too many support tickets created. Please try again in {} seconds.",
+                    retry_after
+                )));
             }
             Err(e) => {
                 tracing::error!(error = ?e, "create_ticket: Rate limit check failed, allowing request");
@@ -320,7 +320,8 @@ pub async fn create_ticket(
     }
     if req.subject.len() > MAX_SUBJECT_LENGTH {
         return Err(ApiError::BadRequest(format!(
-            "Subject too long (max {} characters)", MAX_SUBJECT_LENGTH
+            "Subject too long (max {} characters)",
+            MAX_SUBJECT_LENGTH
         )));
     }
     if req.content.trim().is_empty() {
@@ -328,7 +329,8 @@ pub async fn create_ticket(
     }
     if req.content.len() > MAX_CONTENT_LENGTH {
         return Err(ApiError::BadRequest(format!(
-            "Content too long (max {} characters)", MAX_CONTENT_LENGTH
+            "Content too long (max {} characters)",
+            MAX_CONTENT_LENGTH
         )));
     }
 
@@ -591,13 +593,15 @@ pub async fn reply_to_ticket(
     let (user_id, org_id) = resolve_user_context(&state.pool, &auth_user).await?;
 
     if req.content.trim().is_empty() {
-        return Err(ApiError::BadRequest("Message content cannot be empty".into()));
+        return Err(ApiError::BadRequest(
+            "Message content cannot be empty".into(),
+        ));
     }
 
     // Verify ticket access
     let ticket_exists: bool = if let Some(org_id) = org_id {
         sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM support_tickets WHERE id = $1 AND organization_id = $2)"
+            "SELECT EXISTS(SELECT 1 FROM support_tickets WHERE id = $1 AND organization_id = $2)",
         )
         .bind(ticket_id)
         .bind(org_id)
@@ -605,7 +609,7 @@ pub async fn reply_to_ticket(
         .await?
     } else {
         sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM support_tickets WHERE id = $1 AND user_id = $2)"
+            "SELECT EXISTS(SELECT 1 FROM support_tickets WHERE id = $1 AND user_id = $2)",
         )
         .bind(ticket_id)
         .bind(user_id)
@@ -644,22 +648,26 @@ pub async fn reply_to_ticket(
     .await?;
 
     // Broadcast new message to WebSocket subscribers
-    state.ws_state.rooms.broadcast(
-        &ticket_id,
-        ServerEvent::NewMessage {
-            ticket_id,
-            message: TicketMessageEvent {
-                id: message.id,
+    state
+        .ws_state
+        .rooms
+        .broadcast(
+            &ticket_id,
+            ServerEvent::NewMessage {
                 ticket_id,
-                sender_id: message.sender_id,
-                sender_name: None, // Client can resolve via sender_id
-                is_admin_reply: message.is_admin_reply,
-                is_internal: false,
-                content: message.content.clone(),
-                created_at: message.created_at,
+                message: TicketMessageEvent {
+                    id: message.id,
+                    ticket_id,
+                    sender_id: message.sender_id,
+                    sender_name: None, // Client can resolve via sender_id
+                    is_admin_reply: message.is_admin_reply,
+                    is_internal: false,
+                    content: message.content.clone(),
+                    created_at: message.created_at,
+                },
             },
-        },
-    ).await;
+        )
+        .await;
 
     tracing::info!(
         ticket_id = %ticket_id,
@@ -714,15 +722,19 @@ pub async fn close_ticket(
     let ticket = ticket.ok_or(ApiError::NotFound)?;
 
     // Broadcast ticket update to WebSocket subscribers
-    state.ws_state.rooms.broadcast(
-        &ticket_id,
-        ServerEvent::TicketUpdated {
-            ticket_id,
-            status: Some("closed".to_string()),
-            priority: None,
-            assigned_to: None,
-        },
-    ).await;
+    state
+        .ws_state
+        .rooms
+        .broadcast(
+            &ticket_id,
+            ServerEvent::TicketUpdated {
+                ticket_id,
+                status: Some("closed".to_string()),
+                priority: None,
+                assigned_to: None,
+            },
+        )
+        .await;
 
     tracing::info!(
         ticket_id = %ticket_id,
@@ -896,12 +908,11 @@ async fn require_platform_admin(
         platform_role: String,
     }
 
-    let row: Option<PlatformRoleRow> = sqlx::query_as(
-        "SELECT platform_role::TEXT as platform_role FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<PlatformRoleRow> =
+        sqlx::query_as("SELECT platform_role::TEXT as platform_role FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await?;
 
     let platform_role = row
         .map(|r| r.platform_role)
@@ -943,12 +954,11 @@ pub async fn admin_list_tickets(
         platform_role: String,
     }
 
-    let row: Option<PlatformRoleRow> = sqlx::query_as(
-        "SELECT platform_role::TEXT as platform_role FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let row: Option<PlatformRoleRow> =
+        sqlx::query_as("SELECT platform_role::TEXT as platform_role FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     let platform_role = row
         .map(|r| r.platform_role)
@@ -957,12 +967,10 @@ pub async fn admin_list_tickets(
     // Fetch assigned emails for non-superadmin users
     // Uses SECURITY DEFINER function for RLS-compliant access (SOC 2 CC6.1)
     let assigned_emails: Vec<String> = if platform_role != "superadmin" {
-        sqlx::query_scalar(
-            "SELECT email_address FROM get_user_email_assignments($1)"
-        )
-        .bind(user_id)
-        .fetch_all(&state.pool)
-        .await?
+        sqlx::query_scalar("SELECT email_address FROM get_user_email_assignments($1)")
+            .bind(user_id)
+            .fetch_all(&state.pool)
+            .await?
     } else {
         vec![]
     };
@@ -1270,7 +1278,13 @@ pub async fn admin_update_ticket(
 
     // Validate status if provided
     if let Some(ref status) = req.status {
-        let valid_statuses = ["open", "in_progress", "awaiting_response", "resolved", "closed"];
+        let valid_statuses = [
+            "open",
+            "in_progress",
+            "awaiting_response",
+            "resolved",
+            "closed",
+        ];
         if !valid_statuses.contains(&status.as_str()) {
             return Err(ApiError::BadRequest(format!("Invalid status: {}", status)));
         }
@@ -1280,7 +1294,10 @@ pub async fn admin_update_ticket(
     if let Some(ref priority) = req.priority {
         let valid_priorities = ["low", "medium", "high", "urgent"];
         if !valid_priorities.contains(&priority.as_str()) {
-            return Err(ApiError::BadRequest(format!("Invalid priority: {}", priority)));
+            return Err(ApiError::BadRequest(format!(
+                "Invalid priority: {}",
+                priority
+            )));
         }
     }
 
@@ -1320,15 +1337,19 @@ pub async fn admin_update_ticket(
     .ok_or(ApiError::NotFound)?;
 
     // Broadcast ticket update to WebSocket subscribers
-    state.ws_state.rooms.broadcast(
-        &ticket_id,
-        ServerEvent::TicketUpdated {
-            ticket_id,
-            status: req.status.clone(),
-            priority: req.priority.clone(),
-            assigned_to: req.assigned_to,
-        },
-    ).await;
+    state
+        .ws_state
+        .rooms
+        .broadcast(
+            &ticket_id,
+            ServerEvent::TicketUpdated {
+                ticket_id,
+                status: req.status.clone(),
+                priority: req.priority.clone(),
+                assigned_to: req.assigned_to,
+            },
+        )
+        .await;
 
     tracing::info!(
         ticket_id = %ticket_id,
@@ -1354,7 +1375,7 @@ pub async fn admin_update_ticket(
             event_type, severity
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7)
-        "#
+        "#,
     )
     .bind(admin_id)
     .bind(admin_action::TICKET_STATUS_CHANGED)
@@ -1382,16 +1403,17 @@ pub async fn admin_reply_to_ticket(
     let admin_id = require_platform_admin(&state.pool, &auth_user, true).await?;
 
     if req.content.trim().is_empty() {
-        return Err(ApiError::BadRequest("Message content cannot be empty".into()));
+        return Err(ApiError::BadRequest(
+            "Message content cannot be empty".into(),
+        ));
     }
 
     // Verify ticket exists
-    let ticket_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM support_tickets WHERE id = $1)"
-    )
-    .bind(ticket_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let ticket_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM support_tickets WHERE id = $1)")
+            .bind(ticket_id)
+            .fetch_one(&state.pool)
+            .await?;
 
     if !ticket_exists {
         return Err(ApiError::NotFound);
@@ -1424,22 +1446,26 @@ pub async fn admin_reply_to_ticket(
     .await?;
 
     // Broadcast new message to WebSocket subscribers
-    state.ws_state.rooms.broadcast(
-        &ticket_id,
-        ServerEvent::NewMessage {
-            ticket_id,
-            message: TicketMessageEvent {
-                id: message.id,
+    state
+        .ws_state
+        .rooms
+        .broadcast(
+            &ticket_id,
+            ServerEvent::NewMessage {
                 ticket_id,
-                sender_id: message.sender_id,
-                sender_name: None, // Client can resolve via sender_id
-                is_admin_reply: message.is_admin_reply,
-                is_internal: false,
-                content: message.content.clone(),
-                created_at: message.created_at,
+                message: TicketMessageEvent {
+                    id: message.id,
+                    ticket_id,
+                    sender_id: message.sender_id,
+                    sender_name: None, // Client can resolve via sender_id
+                    is_admin_reply: message.is_admin_reply,
+                    is_internal: false,
+                    content: message.content.clone(),
+                    created_at: message.created_at,
+                },
             },
-        },
-    ).await;
+        )
+        .await;
 
     tracing::info!(
         ticket_id = %ticket_id,
@@ -1460,7 +1486,7 @@ pub async fn admin_reply_to_ticket(
             event_type, severity
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7)
-        "#
+        "#,
     )
     .bind(admin_id)
     .bind(admin_action::TICKET_REPLY_SENT)
@@ -1489,16 +1515,17 @@ pub async fn admin_assign_ticket(
 
     // Only validate assignee if assigning (not unassigning)
     if let Some(assignee_id) = req.assigned_to {
-        let assignee_role: Option<(String,)> = sqlx::query_as(
-            "SELECT platform_role::TEXT FROM users WHERE id = $1"
-        )
-        .bind(assignee_id)
-        .fetch_optional(&state.pool)
-        .await?;
+        let assignee_role: Option<(String,)> =
+            sqlx::query_as("SELECT platform_role::TEXT FROM users WHERE id = $1")
+                .bind(assignee_id)
+                .fetch_optional(&state.pool)
+                .await?;
 
         if let Some((role,)) = assignee_role {
             if !["admin", "superadmin", "staff"].contains(&role.as_str()) {
-                return Err(ApiError::BadRequest("Assignee must be an admin or staff member".into()));
+                return Err(ApiError::BadRequest(
+                    "Assignee must be an admin or staff member".into(),
+                ));
             }
         } else {
             return Err(ApiError::BadRequest("Assignee user not found".into()));
@@ -1513,12 +1540,11 @@ pub async fn admin_assign_ticket(
     };
 
     // Get current assignee for history tracking
-    let current_assignee: Option<(Option<Uuid>,)> = sqlx::query_as(
-        "SELECT assigned_to FROM support_tickets WHERE id = $1"
-    )
-    .bind(ticket_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let current_assignee: Option<(Option<Uuid>,)> =
+        sqlx::query_as("SELECT assigned_to FROM support_tickets WHERE id = $1")
+            .bind(ticket_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     let assigned_from = current_assignee.and_then(|(a,)| a);
 
@@ -1565,15 +1591,19 @@ pub async fn admin_assign_ticket(
     .await?;
 
     // Broadcast ticket update to WebSocket subscribers
-    state.ws_state.rooms.broadcast(
-        &ticket_id,
-        ServerEvent::TicketUpdated {
-            ticket_id,
-            status: Some(new_status.to_string()),
-            priority: None,
-            assigned_to: req.assigned_to,
-        },
-    ).await;
+    state
+        .ws_state
+        .rooms
+        .broadcast(
+            &ticket_id,
+            ServerEvent::TicketUpdated {
+                ticket_id,
+                status: Some(new_status.to_string()),
+                priority: None,
+                assigned_to: req.assigned_to,
+            },
+        )
+        .await;
 
     tracing::info!(
         ticket_id = %ticket_id,
@@ -1597,7 +1627,7 @@ pub async fn admin_assign_ticket(
             event_type, severity
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7)
-        "#
+        "#,
     )
     .bind(admin_id)
     .bind(admin_action::TICKET_ASSIGNED)
@@ -1981,11 +2011,16 @@ pub async fn admin_list_staff(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(staff.into_iter().map(|s| StaffMemberResponse {
-        id: s.id,
-        email: s.email,
-        platform_role: s.platform_role,
-    }).collect()))
+    Ok(Json(
+        staff
+            .into_iter()
+            .map(|s| StaffMemberResponse {
+                id: s.id,
+                email: s.email,
+                platform_role: s.platform_role,
+            })
+            .collect(),
+    ))
 }
 
 // =============================================================================
@@ -2016,17 +2051,22 @@ pub async fn admin_list_sla_rules(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(rules.into_iter().map(|r| SlaRule {
-        id: r.id,
-        name: r.name,
-        priority: r.priority,
-        category: r.category,
-        first_response_hours: r.first_response_hours,
-        resolution_hours: r.resolution_hours,
-        business_hours_only: r.business_hours_only,
-        is_active: r.is_active,
-        created_at: r.created_at,
-    }).collect()))
+    Ok(Json(
+        rules
+            .into_iter()
+            .map(|r| SlaRule {
+                id: r.id,
+                name: r.name,
+                priority: r.priority,
+                category: r.category,
+                first_response_hours: r.first_response_hours,
+                resolution_hours: r.resolution_hours,
+                business_hours_only: r.business_hours_only,
+                is_active: r.is_active,
+                created_at: r.created_at,
+            })
+            .collect(),
+    ))
 }
 
 /// Create SLA rule (admin)
@@ -2136,18 +2176,23 @@ pub async fn admin_list_templates(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(templates.into_iter().map(|t| TicketTemplate {
-        id: t.id,
-        name: t.name,
-        category: t.category,
-        subject_template: t.subject_template,
-        content: t.content,
-        shortcut: t.shortcut,
-        created_by: t.created_by,
-        usage_count: t.usage_count,
-        is_active: t.is_active,
-        created_at: t.created_at,
-    }).collect()))
+    Ok(Json(
+        templates
+            .into_iter()
+            .map(|t| TicketTemplate {
+                id: t.id,
+                name: t.name,
+                category: t.category,
+                subject_template: t.subject_template,
+                content: t.content,
+                shortcut: t.shortcut,
+                created_by: t.created_by,
+                usage_count: t.usage_count,
+                is_active: t.is_active,
+                created_at: t.created_at,
+            })
+            .collect(),
+    ))
 }
 
 /// Create template (admin)
@@ -2288,15 +2333,20 @@ pub async fn admin_get_assignment_history(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(history.into_iter().map(|h| AssignmentHistoryEntry {
-        id: h.id,
-        ticket_id: h.ticket_id,
-        assigned_from_email: h.assigned_from_email,
-        assigned_to_email: h.assigned_to_email,
-        assigned_by_email: h.assigned_by_email,
-        reason: h.reason,
-        created_at: h.created_at,
-    }).collect()))
+    Ok(Json(
+        history
+            .into_iter()
+            .map(|h| AssignmentHistoryEntry {
+                id: h.id,
+                ticket_id: h.ticket_id,
+                assigned_from_email: h.assigned_from_email,
+                assigned_to_email: h.assigned_to_email,
+                assigned_by_email: h.assigned_by_email,
+                reason: h.reason,
+                created_at: h.created_at,
+            })
+            .collect(),
+    ))
 }
 
 // =============================================================================
@@ -2313,16 +2363,17 @@ pub async fn admin_batch_assign(
 
     // Only validate assignee if assigning (not unassigning)
     if let Some(assignee_id) = req.assigned_to {
-        let assignee_role: Option<(String,)> = sqlx::query_as(
-            "SELECT platform_role::TEXT FROM users WHERE id = $1"
-        )
-        .bind(assignee_id)
-        .fetch_optional(&state.pool)
-        .await?;
+        let assignee_role: Option<(String,)> =
+            sqlx::query_as("SELECT platform_role::TEXT FROM users WHERE id = $1")
+                .bind(assignee_id)
+                .fetch_optional(&state.pool)
+                .await?;
 
         if let Some((role,)) = assignee_role {
             if !["admin", "superadmin", "staff"].contains(&role.as_str()) {
-                return Err(ApiError::BadRequest("Assignee must be an admin or staff member".into()));
+                return Err(ApiError::BadRequest(
+                    "Assignee must be an admin or staff member".into(),
+                ));
             }
         } else {
             return Err(ApiError::BadRequest("Assignee user not found".into()));
@@ -2341,14 +2392,13 @@ pub async fn admin_batch_assign(
 
     for ticket_id in &req.ticket_ids {
         // Get current assignee for history
-        let current: Option<(Option<Uuid>,)> = sqlx::query_as(
-            "SELECT assigned_to FROM support_tickets WHERE id = $1"
-        )
-        .bind(ticket_id)
-        .fetch_optional(&state.pool)
-        .await
-        .ok()
-        .flatten();
+        let current: Option<(Option<Uuid>,)> =
+            sqlx::query_as("SELECT assigned_to FROM support_tickets WHERE id = $1")
+                .bind(ticket_id)
+                .fetch_optional(&state.pool)
+                .await
+                .ok()
+                .flatten();
 
         let assigned_from = current.and_then(|(a,)| a);
 
@@ -2403,9 +2453,18 @@ pub async fn admin_batch_status(
 ) -> ApiResult<Json<BatchOperationResponse>> {
     require_platform_admin(&state.pool, &auth_user, true).await?;
 
-    let valid_statuses = ["open", "in_progress", "awaiting_response", "resolved", "closed"];
+    let valid_statuses = [
+        "open",
+        "in_progress",
+        "awaiting_response",
+        "resolved",
+        "closed",
+    ];
     if !valid_statuses.contains(&req.status.as_str()) {
-        return Err(ApiError::BadRequest(format!("Invalid status: {}", req.status)));
+        return Err(ApiError::BadRequest(format!(
+            "Invalid status: {}",
+            req.status
+        )));
     }
 
     let mut success_count = 0i64;
@@ -2454,16 +2513,17 @@ pub async fn admin_reply_with_internal(
     let admin_id = require_platform_admin(&state.pool, &auth_user, true).await?;
 
     if req.content.trim().is_empty() {
-        return Err(ApiError::BadRequest("Message content cannot be empty".into()));
+        return Err(ApiError::BadRequest(
+            "Message content cannot be empty".into(),
+        ));
     }
 
     // Verify ticket exists
-    let ticket_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM support_tickets WHERE id = $1)"
-    )
-    .bind(ticket_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let ticket_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM support_tickets WHERE id = $1)")
+            .bind(ticket_id)
+            .fetch_one(&state.pool)
+            .await?;
 
     if !ticket_exists {
         return Err(ApiError::NotFound);
@@ -2498,43 +2558,45 @@ pub async fn admin_reply_with_internal(
         .await?;
 
         // Broadcast new message to WebSocket subscribers (only for non-internal messages)
-        state.ws_state.rooms.broadcast(
-            &ticket_id,
-            ServerEvent::NewMessage {
-                ticket_id,
-                message: TicketMessageEvent {
-                    id: message.id,
+        state
+            .ws_state
+            .rooms
+            .broadcast(
+                &ticket_id,
+                ServerEvent::NewMessage {
                     ticket_id,
-                    sender_id: message.sender_id,
-                    sender_name: None, // Client can resolve via sender_id
-                    is_admin_reply: message.is_admin_reply,
-                    is_internal: false, // Only non-internal messages are broadcast
-                    content: message.content.clone(),
-                    created_at: message.created_at,
+                    message: TicketMessageEvent {
+                        id: message.id,
+                        ticket_id,
+                        sender_id: message.sender_id,
+                        sender_name: None, // Client can resolve via sender_id
+                        is_admin_reply: message.is_admin_reply,
+                        is_internal: false, // Only non-internal messages are broadcast
+                        content: message.content.clone(),
+                        created_at: message.created_at,
+                    },
                 },
-            },
-        ).await;
+            )
+            .await;
     }
 
     // Send email reply for email-sourced tickets (Day 3)
     // Only send if: 1) ticket source is 'email' AND 2) message is not internal
     if !req.is_internal {
         // Check if this is an email-sourced ticket
-        let ticket_source: Option<String> = sqlx::query_scalar(
-            "SELECT source FROM support_tickets WHERE id = $1"
-        )
-        .bind(ticket_id)
-        .fetch_optional(&state.pool)
-        .await?;
+        let ticket_source: Option<String> =
+            sqlx::query_scalar("SELECT source FROM support_tickets WHERE id = $1")
+                .bind(ticket_id)
+                .fetch_optional(&state.pool)
+                .await?;
 
         if ticket_source.as_deref() == Some("email") {
             // Get admin's email for the From address
-            let admin_email: Option<String> = sqlx::query_scalar(
-                "SELECT email FROM users WHERE id = $1"
-            )
-            .bind(admin_id)
-            .fetch_optional(&state.pool)
-            .await?;
+            let admin_email: Option<String> =
+                sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
+                    .bind(admin_id)
+                    .fetch_optional(&state.pool)
+                    .await?;
 
             let staff_email = admin_email.unwrap_or_else(|| "support@plexmcp.com".to_string());
 
@@ -2547,7 +2609,9 @@ pub async fn admin_reply_with_internal(
                 message.id,
                 &req.content,
                 &staff_email,
-            ).await {
+            )
+            .await
+            {
                 Ok(reply_message_id) => {
                     // Fetch parent message ID for threading metadata
                     let parent_message_id: Option<String> = sqlx::query_scalar(
@@ -2557,29 +2621,29 @@ pub async fn admin_reply_with_internal(
                         WHERE ticket_id = $1
                         ORDER BY created_at DESC
                         LIMIT 1
-                        "#
+                        "#,
                     )
                     .bind(ticket_id)
                     .fetch_optional(&state.pool)
                     .await?;
 
                     // Fetch ticket subject for metadata
-                    let subject: String = sqlx::query_scalar(
-                        "SELECT subject FROM support_tickets WHERE id = $1"
-                    )
-                    .bind(ticket_id)
-                    .fetch_one(&state.pool)
-                    .await?;
+                    let subject: String =
+                        sqlx::query_scalar("SELECT subject FROM support_tickets WHERE id = $1")
+                            .bind(ticket_id)
+                            .fetch_one(&state.pool)
+                            .await?;
 
                     // Fetch customer email
                     let customer_email: Option<String> = sqlx::query_scalar(
-                        "SELECT original_email_from FROM support_tickets WHERE id = $1"
+                        "SELECT original_email_from FROM support_tickets WHERE id = $1",
                     )
                     .bind(ticket_id)
                     .fetch_optional(&state.pool)
                     .await?;
 
-                    let to_email = customer_email.unwrap_or_else(|| "unknown@example.com".to_string());
+                    let to_email =
+                        customer_email.unwrap_or_else(|| "unknown@example.com".to_string());
 
                     // Store outbound email metadata
                     if let Err(e) = store_outbound_email_metadata(
@@ -2592,7 +2656,9 @@ pub async fn admin_reply_with_internal(
                         &staff_email,
                         &to_email,
                         &format!("Re: {}", subject),
-                    ).await {
+                    )
+                    .await
+                    {
                         tracing::error!(
                             error = %e,
                             ticket_id = %ticket_id,
@@ -2642,7 +2708,7 @@ pub async fn admin_reply_with_internal(
             event_type, severity
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7)
-        "#
+        "#,
     )
     .bind(admin_id)
     .bind(admin_action::TICKET_REPLY_SENT)
@@ -2694,7 +2760,7 @@ async fn send_email_reply(
         SELECT original_email_from, original_email_to, subject
         FROM support_tickets
         WHERE id = $1
-        "#
+        "#,
     )
     .bind(ticket_id)
     .fetch_one(pool)
@@ -2704,10 +2770,12 @@ async fn send_email_reply(
         ApiError::Database(e.to_string())
     })?;
 
-    let customer_email = ticket_info.original_email_from
+    let customer_email = ticket_info
+        .original_email_from
         .ok_or_else(|| ApiError::BadRequest("Ticket has no customer email".into()))?;
 
-    let staff_reply_email = ticket_info.original_email_to
+    let staff_reply_email = ticket_info
+        .original_email_to
         .unwrap_or_else(|| "support@plexmcp.com".to_string());
 
     // Fetch parent Message-ID for threading
@@ -2718,7 +2786,7 @@ async fn send_email_reply(
         WHERE ticket_id = $1
         ORDER BY created_at DESC
         LIMIT 1
-        "#
+        "#,
     )
     .bind(ticket_id)
     .fetch_optional(pool)
@@ -2776,20 +2844,25 @@ async fn send_email_reply(
 
     if !response.status().is_success() {
         let status = response.status();
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         tracing::error!(
             status = %status,
             error = %error_text,
             "Resend API error"
         );
-        return Err(ApiError::BadRequest(format!("Failed to send email: {}", error_text)));
+        return Err(ApiError::BadRequest(format!(
+            "Failed to send email: {}",
+            error_text
+        )));
     }
 
-    let resend_response: serde_json::Value = response.json().await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to parse Resend response");
-            ApiError::Internal
-        })?;
+    let resend_response: serde_json::Value = response.json().await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to parse Resend response");
+        ApiError::Internal
+    })?;
 
     let resend_email_id = resend_response["id"]
         .as_str()
@@ -2834,7 +2907,7 @@ async fn store_outbound_email_metadata(
             attachment_count
         )
         VALUES ($1, $2, $3, $4, $5, 'outbound', $6, ARRAY[$7]::TEXT[], $8, FALSE, 0)
-        "#
+        "#,
     )
     .bind(ticket_id)
     .bind(message_id)

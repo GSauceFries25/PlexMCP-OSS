@@ -16,7 +16,10 @@ use uuid::Uuid;
 use crate::{
     auth::AuthUser,
     error::ApiError,
-    mcp::{client::McpClient, types::{McpAuth, McpTransport}},
+    mcp::{
+        client::McpClient,
+        types::{McpAuth, McpTransport},
+    },
     state::AppState,
 };
 
@@ -29,7 +32,7 @@ pub struct McpResponse {
     pub description: Option<String>,
     pub config: serde_json::Value,
     pub status: String,
-    pub is_active: bool,  // Computed from status for frontend compatibility
+    pub is_active: bool, // Computed from status for frontend compatibility
     pub health_status: String,
     pub last_health_check_at: Option<String>,
     pub created_at: String,
@@ -375,7 +378,11 @@ pub async fn create_mcp(
     let now = OffsetDateTime::now_utc();
 
     // Set status based on is_active field (default to active if not specified)
-    let status = if req.is_active.unwrap_or(true) { "active" } else { "inactive" };
+    let status = if req.is_active.unwrap_or(true) {
+        "active"
+    } else {
+        "inactive"
+    };
 
     let mcp: McpInstance = sqlx::query_as(
         r#"
@@ -463,7 +470,7 @@ pub async fn update_mcp(
     if let Some(timeout) = req.request_timeout_ms {
         if !(100..=120000).contains(&timeout) {
             return Err(ApiError::Validation(
-                "request_timeout_ms must be between 100 and 120000 milliseconds".to_string()
+                "request_timeout_ms must be between 100 and 120000 milliseconds".to_string(),
             ));
         }
     }
@@ -472,7 +479,7 @@ pub async fn update_mcp(
     if let Some(timeout) = req.partial_timeout_ms {
         if !(100..=60000).contains(&timeout) {
             return Err(ApiError::Validation(
-                "partial_timeout_ms must be between 100 and 60000 milliseconds".to_string()
+                "partial_timeout_ms must be between 100 and 60000 milliseconds".to_string(),
             ));
         }
     }
@@ -489,7 +496,9 @@ pub async fn update_mcp(
     };
 
     // Use provided timeout values or keep existing ones
-    let request_timeout_ms = req.request_timeout_ms.unwrap_or(existing.request_timeout_ms);
+    let request_timeout_ms = req
+        .request_timeout_ms
+        .unwrap_or(existing.request_timeout_ms);
     let partial_timeout_ms = req.partial_timeout_ms.or(existing.partial_timeout_ms);
 
     let mcp: McpInstance = sqlx::query_as(
@@ -525,13 +534,11 @@ pub async fn delete_mcp(
     Path(mcp_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
-    let result = sqlx::query(
-        "DELETE FROM mcp_instances WHERE id = $1 AND org_id = $2"
-    )
-    .bind(mcp_id)
-    .bind(org_id)
-    .execute(&state.pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM mcp_instances WHERE id = $1 AND org_id = $2")
+        .bind(mcp_id)
+        .bind(org_id)
+        .execute(&state.pool)
+        .await?;
 
     if result.rows_affected() == 0 {
         return Err(ApiError::NotFound);
@@ -666,10 +673,9 @@ pub async fn trigger_health_check(
                     // Also try to get resources
                     let resources_result = client.get_resources(&transport, &mcp_id_str).await;
                     let (resources_count, resources_json) = match resources_result {
-                        Ok(resources) => (
-                            Some(resources.len()),
-                            serde_json::to_value(&resources).ok()
-                        ),
+                        Ok(resources) => {
+                            (Some(resources.len()), serde_json::to_value(&resources).ok())
+                        }
                         Err(_) => (None, None),
                     };
 
@@ -688,7 +694,7 @@ pub async fn trigger_health_check(
                             error: None,
                             tools_json,
                             resources_json,
-                        }
+                        },
                     )
                 }
                 Err(e) => {
@@ -705,7 +711,7 @@ pub async fn trigger_health_check(
                             error: Some(format!("Failed to list tools: {}", e)),
                             tools_json: None,
                             resources_json: None,
-                        }
+                        },
                     )
                 }
             }
@@ -726,7 +732,7 @@ pub async fn trigger_health_check(
                     error: Some(error_message),
                     tools_json: None,
                     resources_json: None,
-                }
+                },
             )
         }
     };
@@ -747,7 +753,7 @@ pub async fn trigger_health_check(
             resources_json = $12,
             updated_at = NOW()
         WHERE id = $1 AND org_id = $2
-        "#
+        "#,
     )
     .bind(mcp_id)
     .bind(org_id)
@@ -771,7 +777,7 @@ pub async fn trigger_health_check(
             mcp_id, org_id, health_status, protocol_version, server_name, server_version,
             tools_count, resources_count, latency_ms, error_message, tested_at, tested_by
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        "#
+        "#,
     )
     .bind(mcp_id)
     .bind(org_id)
@@ -786,7 +792,8 @@ pub async fn trigger_health_check(
     .bind(now)
     .bind(None::<uuid::Uuid>) // Use NULL for tested_by to avoid FK issues with auth.users vs public.users
     .execute(&state.pool)
-    .await {
+    .await
+    {
         tracing::error!("Failed to save test history for MCP {}: {}", mcp_id, e);
     }
 
@@ -801,7 +808,8 @@ pub async fn trigger_health_check(
 /// Parse transport configuration from MCP config
 fn parse_transport(mcp_type: &str, config: &serde_json::Value) -> Option<McpTransport> {
     // Support both "endpoint_url" and "url" keys for backwards compatibility
-    let endpoint_url = config.get("endpoint_url")
+    let endpoint_url = config
+        .get("endpoint_url")
         .or_else(|| config.get("url"))
         .and_then(|v| v.as_str())
         .map(String::from)?;
@@ -863,7 +871,11 @@ fn parse_auth(config: &serde_json::Value) -> McpAuth {
                     .and_then(|v| v.as_str())
                     .unwrap_or("X-API-Key")
                     .to_string();
-                if let Some(value) = auth_obj.get("token").or_else(|| auth_obj.get("value")).and_then(|v| v.as_str()) {
+                if let Some(value) = auth_obj
+                    .get("token")
+                    .or_else(|| auth_obj.get("value"))
+                    .and_then(|v| v.as_str())
+                {
                     return McpAuth::ApiKey {
                         header,
                         value: value.to_string(),
@@ -1006,7 +1018,7 @@ pub async fn update_mcp_config(
         SET config = $3, updated_at = NOW()
         WHERE id = $1 AND org_id = $2
         RETURNING config
-        "#
+        "#,
     )
     .bind(mcp_id)
     .bind(org_id)
@@ -1021,12 +1033,11 @@ pub async fn update_mcp_config(
 /// Get organization subscription tier
 #[allow(dead_code)] // Reserved for tier-based feature gating
 async fn get_org_tier(pool: &sqlx::PgPool, org_id: Uuid) -> Result<SubscriptionTier, ApiError> {
-    let result: Option<(String,)> = sqlx::query_as(
-        "SELECT subscription_tier FROM organizations WHERE id = $1"
-    )
-    .bind(org_id)
-    .fetch_optional(pool)
-    .await?;
+    let result: Option<(String,)> =
+        sqlx::query_as("SELECT subscription_tier FROM organizations WHERE id = $1")
+            .bind(org_id)
+            .fetch_optional(pool)
+            .await?;
 
     Ok(result
         .map(|(t,)| t.parse().unwrap_or(SubscriptionTier::Free))
@@ -1046,19 +1057,25 @@ struct OrgLimitData {
 }
 
 /// Get organization's effective limits (tier + custom overrides)
-async fn get_org_effective_limits(pool: &sqlx::PgPool, org_id: Uuid) -> Result<plexmcp_shared::types::EffectiveLimits, ApiError> {
+async fn get_org_effective_limits(
+    pool: &sqlx::PgPool,
+    org_id: Uuid,
+) -> Result<plexmcp_shared::types::EffectiveLimits, ApiError> {
     let result: Option<OrgLimitData> = sqlx::query_as(
         r#"SELECT subscription_tier, custom_max_mcps, custom_max_api_keys,
                   custom_max_team_members, custom_max_requests_monthly,
                   custom_overage_rate_cents, custom_monthly_price_cents
-           FROM organizations WHERE id = $1"#
+           FROM organizations WHERE id = $1"#,
     )
     .bind(org_id)
     .fetch_optional(pool)
     .await?;
 
     let data = result.ok_or(ApiError::NotFound)?;
-    let tier: SubscriptionTier = data.subscription_tier.parse().unwrap_or(SubscriptionTier::Free);
+    let tier: SubscriptionTier = data
+        .subscription_tier
+        .parse()
+        .unwrap_or(SubscriptionTier::Free);
     let custom = plexmcp_shared::types::CustomLimits {
         max_mcps: data.custom_max_mcps.map(|v| v as u32),
         max_api_keys: data.custom_max_api_keys.map(|v| v as u32),
@@ -1073,12 +1090,10 @@ async fn get_org_effective_limits(pool: &sqlx::PgPool, org_id: Uuid) -> Result<p
 
 /// Get current MCP count for organization
 async fn get_mcp_count(pool: &sqlx::PgPool, org_id: Uuid) -> Result<i64, ApiError> {
-    let result: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM mcp_instances WHERE org_id = $1"
-    )
-    .bind(org_id)
-    .fetch_one(pool)
-    .await?;
+    let result: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM mcp_instances WHERE org_id = $1")
+        .bind(org_id)
+        .fetch_one(pool)
+        .await?;
 
     Ok(result.0)
 }
@@ -1102,13 +1117,12 @@ pub async fn get_test_history(
     let org_id = auth_user.org_id.ok_or(ApiError::NoOrganization)?;
 
     // Verify MCP belongs to org
-    let exists: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM mcp_instances WHERE id = $1 AND org_id = $2"
-    )
-    .bind(mcp_id)
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let exists: Option<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM mcp_instances WHERE id = $1 AND org_id = $2")
+            .bind(mcp_id)
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if exists.is_none() {
         return Err(ApiError::NotFound);
@@ -1123,14 +1137,16 @@ pub async fn get_test_history(
         WHERE mcp_id = $1 AND org_id = $2
         ORDER BY tested_at DESC
         LIMIT 50
-        "#
+        "#,
     )
     .bind(mcp_id)
     .bind(org_id)
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(history.into_iter().map(TestHistoryResponse::from).collect()))
+    Ok(Json(
+        history.into_iter().map(TestHistoryResponse::from).collect(),
+    ))
 }
 
 /// Validate MCP configuration without running a full test
@@ -1161,7 +1177,9 @@ pub async fn validate_config(
     let mut validations = Vec::new();
 
     // Check 1: URL format
-    let endpoint_url = mcp.config.get("endpoint_url")
+    let endpoint_url = mcp
+        .config
+        .get("endpoint_url")
         .or_else(|| mcp.config.get("url"))
         .and_then(|v| v.as_str());
 
@@ -1203,7 +1221,7 @@ pub async fn validate_config(
     };
     validations.push(ValidationCheck {
         check: "auth_configured".to_string(),
-        passed: true,  // Even "None" is valid for some MCPs
+        passed: true, // Even "None" is valid for some MCPs
         message: auth_message.to_string(),
         latency_ms: None,
     });
@@ -1304,19 +1322,24 @@ pub async fn test_all_mcps(
         let start = Instant::now();
         let mcp_id_str = mcp.id.to_string();
 
-        let (health_status, tools_count, error) = match parse_transport(&mcp.mcp_type, &mcp.config) {
-            Some(transport) => {
-                match client.initialize(&transport, &mcp_id_str).await {
-                    Ok(_init) => {
-                        match client.get_tools(&transport, &mcp_id_str).await {
-                            Ok(tools) => ("healthy".to_string(), Some(tools.len()), None),
-                            Err(e) => ("unhealthy".to_string(), None, Some(format!("Failed to list tools: {}", e))),
-                        }
-                    }
-                    Err(e) => ("unhealthy".to_string(), None, Some(format_mcp_error(&e))),
-                }
-            }
-            None => ("unhealthy".to_string(), None, Some("Invalid configuration".to_string())),
+        let (health_status, tools_count, error) = match parse_transport(&mcp.mcp_type, &mcp.config)
+        {
+            Some(transport) => match client.initialize(&transport, &mcp_id_str).await {
+                Ok(_init) => match client.get_tools(&transport, &mcp_id_str).await {
+                    Ok(tools) => ("healthy".to_string(), Some(tools.len()), None),
+                    Err(e) => (
+                        "unhealthy".to_string(),
+                        None,
+                        Some(format!("Failed to list tools: {}", e)),
+                    ),
+                },
+                Err(e) => ("unhealthy".to_string(), None, Some(format_mcp_error(&e))),
+            },
+            None => (
+                "unhealthy".to_string(),
+                None,
+                Some("Invalid configuration".to_string()),
+            ),
         };
 
         let latency_ms = start.elapsed().as_millis() as u64;
@@ -1329,7 +1352,7 @@ pub async fn test_all_mcps(
                    tools_count = $4,
                    last_latency_ms = $5,
                    updated_at = NOW()
-               WHERE id = $1"#
+               WHERE id = $1"#,
         )
         .bind(mcp.id)
         .bind(&health_status)
@@ -1368,7 +1391,10 @@ pub async fn test_all_mcps(
         });
     }
 
-    let healthy = results.iter().filter(|r| r.health_status == "healthy").count();
+    let healthy = results
+        .iter()
+        .filter(|r| r.health_status == "healthy")
+        .count();
     let unhealthy = results.len() - healthy;
 
     Ok(Json(BatchTestResponse {

@@ -105,9 +105,11 @@ impl RefundService {
 
         // Create the Stripe refund
         let mut params = CreateRefund::new();
-        params.charge = Some(charge_id.parse().map_err(|e| {
-            BillingError::RefundFailed(format!("Invalid charge ID: {}", e))
-        })?);
+        params.charge = Some(
+            charge_id
+                .parse()
+                .map_err(|e| BillingError::RefundFailed(format!("Invalid charge ID: {}", e)))?,
+        );
         params.amount = Some(amount_cents);
         params.reason = Some(RefundReasonFilter::RequestedByCustomer);
 
@@ -214,9 +216,10 @@ impl RefundService {
     ) -> BillingResult<RefundableCharge> {
         // List invoices for this subscription, sorted by date descending
         let mut params = stripe::ListInvoices::new();
-        params.subscription = Some(subscription_id.parse().map_err(|e| {
-            BillingError::RefundFailed(format!("Invalid subscription ID: {}", e))
-        })?);
+        params.subscription =
+            Some(subscription_id.parse().map_err(|e| {
+                BillingError::RefundFailed(format!("Invalid subscription ID: {}", e))
+            })?);
         params.status = Some(stripe::InvoiceStatus::Paid);
         params.limit = Some(1);
 
@@ -254,16 +257,15 @@ impl RefundService {
         let period_start = invoice
             .period_start
             .map(|ts| {
-                OffsetDateTime::from_unix_timestamp(ts)
-                    .unwrap_or_else(|e| {
-                        tracing::warn!(
-                            invoice_id = %invoice.id,
-                            timestamp = ts,
-                            error = %e,
-                            "Failed to parse period_start timestamp, using now"
-                        );
-                        OffsetDateTime::now_utc()
-                    })
+                OffsetDateTime::from_unix_timestamp(ts).unwrap_or_else(|e| {
+                    tracing::warn!(
+                        invoice_id = %invoice.id,
+                        timestamp = ts,
+                        error = %e,
+                        "Failed to parse period_start timestamp, using now"
+                    );
+                    OffsetDateTime::now_utc()
+                })
             })
             .unwrap_or_else(|| {
                 tracing::warn!(invoice_id = %invoice.id, "Missing period_start, using now");
@@ -273,16 +275,15 @@ impl RefundService {
         let period_end = invoice
             .period_end
             .map(|ts| {
-                OffsetDateTime::from_unix_timestamp(ts)
-                    .unwrap_or_else(|e| {
-                        tracing::warn!(
-                            invoice_id = %invoice.id,
-                            timestamp = ts,
-                            error = %e,
-                            "Failed to parse period_end timestamp, using now"
-                        );
-                        OffsetDateTime::now_utc()
-                    })
+                OffsetDateTime::from_unix_timestamp(ts).unwrap_or_else(|e| {
+                    tracing::warn!(
+                        invoice_id = %invoice.id,
+                        timestamp = ts,
+                        error = %e,
+                        "Failed to parse period_end timestamp, using now"
+                    );
+                    OffsetDateTime::now_utc()
+                })
             })
             .unwrap_or_else(|| {
                 tracing::warn!(invoice_id = %invoice.id, "Missing period_end, using now");

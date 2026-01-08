@@ -99,12 +99,11 @@ pub async fn list_identities(
     let user_id = auth_user.user_id.ok_or(ApiError::Unauthorized)?;
 
     // Get user's password hash to determine if they have password auth
-    let user: Option<UserPasswordRow> = sqlx::query_as(
-        "SELECT password_hash, email FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let user: Option<UserPasswordRow> =
+        sqlx::query_as("SELECT password_hash, email FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     let has_password = user
         .as_ref()
@@ -118,7 +117,7 @@ pub async fn list_identities(
         FROM user_identities
         WHERE user_id = $1
         ORDER BY linked_at ASC
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_all(&state.pool)
@@ -172,7 +171,7 @@ pub async fn link_identity(
 
     // Check if this provider account is already linked to another user
     let existing: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT user_id FROM user_identities WHERE provider = $1 AND provider_user_id = $2"
+        "SELECT user_id FROM user_identities WHERE provider = $1 AND provider_user_id = $2",
     )
     .bind(&req.provider)
     .bind(&req.provider_user_id)
@@ -182,25 +181,25 @@ pub async fn link_identity(
     if let Some((existing_user_id,)) = existing {
         if existing_user_id != user_id {
             return Err(ApiError::Conflict(
-                "This account is already connected to another user".to_string()
+                "This account is already connected to another user".to_string(),
             ));
         }
         // Already linked to this user - just return success
     }
 
     // Check if user already has this provider linked
-    let already_linked: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM user_identities WHERE user_id = $1 AND provider = $2"
-    )
-    .bind(user_id)
-    .bind(&req.provider)
-    .fetch_optional(&state.pool)
-    .await?;
+    let already_linked: Option<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM user_identities WHERE user_id = $1 AND provider = $2")
+            .bind(user_id)
+            .bind(&req.provider)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if already_linked.is_some() {
-        return Err(ApiError::Conflict(
-            format!("{} is already connected to your account", req.provider)
-        ));
+        return Err(ApiError::Conflict(format!(
+            "{} is already connected to your account",
+            req.provider
+        )));
     }
 
     // Insert the new identity
@@ -234,7 +233,7 @@ pub async fn link_identity(
         r#"
         INSERT INTO user_identity_audit (user_id, action, provider, ip_address, user_agent)
         VALUES ($1, 'linked', $2, $3, $4)
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(&req.provider)
@@ -248,7 +247,9 @@ pub async fn link_identity(
     let email_to = user_email.0;
     let provider = req.provider.clone();
     tokio::spawn(async move {
-        email_service.send_account_linked(&email_to, &provider, client_ip.as_deref()).await;
+        email_service
+            .send_account_linked(&email_to, &provider, client_ip.as_deref())
+            .await;
     });
 
     Ok(Json(IdentityResponse {
@@ -273,22 +274,20 @@ pub async fn unlink_identity(
     let user_id = auth_user.user_id.ok_or(ApiError::Unauthorized)?;
 
     // Check if user has password set
-    let user: UserPasswordRow = sqlx::query_as(
-        "SELECT password_hash, email FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let user: UserPasswordRow =
+        sqlx::query_as("SELECT password_hash, email FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&state.pool)
+            .await?;
 
     let has_password = !user.password_hash.is_empty();
 
     // Count linked identities
-    let identity_count: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM user_identities WHERE user_id = $1"
-    )
-    .bind(user_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let identity_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM user_identities WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(&state.pool)
+            .await?;
 
     // Safety check: cannot unlink if it's the only auth method
     if !has_password && identity_count.0 <= 1 {
@@ -298,13 +297,12 @@ pub async fn unlink_identity(
     }
 
     // Check if identity exists
-    let identity_exists: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM user_identities WHERE user_id = $1 AND provider = $2"
-    )
-    .bind(user_id)
-    .bind(&provider)
-    .fetch_optional(&state.pool)
-    .await?;
+    let identity_exists: Option<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM user_identities WHERE user_id = $1 AND provider = $2")
+            .bind(user_id)
+            .bind(&provider)
+            .fetch_optional(&state.pool)
+            .await?;
 
     if identity_exists.is_none() {
         return Err(ApiError::NotFound);
@@ -325,7 +323,7 @@ pub async fn unlink_identity(
         r#"
         INSERT INTO user_identity_audit (user_id, action, provider, ip_address, user_agent)
         VALUES ($1, 'unlinked', $2, $3, $4)
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(&provider)
@@ -338,7 +336,9 @@ pub async fn unlink_identity(
     let email_service = state.security_email.clone();
     let email_to = user.email;
     tokio::spawn(async move {
-        email_service.send_account_unlinked(&email_to, &provider, client_ip.as_deref()).await;
+        email_service
+            .send_account_unlinked(&email_to, &provider, client_ip.as_deref())
+            .await;
     });
 
     Ok(StatusCode::NO_CONTENT)
@@ -353,12 +353,11 @@ pub async fn list_providers(
     let user_id = auth_user.user_id.ok_or(ApiError::Unauthorized)?;
 
     // Get connected providers
-    let connected: Vec<(String,)> = sqlx::query_as(
-        "SELECT provider FROM user_identities WHERE user_id = $1"
-    )
-    .bind(user_id)
-    .fetch_all(&state.pool)
-    .await?;
+    let connected: Vec<(String,)> =
+        sqlx::query_as("SELECT provider FROM user_identities WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_all(&state.pool)
+            .await?;
 
     let connected_providers: Vec<String> = connected.into_iter().map(|p| p.0).collect();
 

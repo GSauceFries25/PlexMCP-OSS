@@ -252,7 +252,9 @@ mod tests {
     fn test_parse_tool_name_with_colons() {
         let router = McpRouter::new();
         // Tool name can contain colons
-        let parsed = router.parse_tool_name("github:api:v2:create_issue").unwrap();
+        let parsed = router
+            .parse_tool_name("github:api:v2:create_issue")
+            .unwrap();
         assert_eq!(parsed.mcp_name, "github");
         assert_eq!(parsed.tool_name, "api:v2:create_issue");
     }
@@ -302,8 +304,14 @@ mod tests {
 
     #[test]
     fn test_method_type() {
-        assert_eq!(McpRouter::get_method_type("tools/list"), McpMethod::ToolsList);
-        assert_eq!(McpRouter::get_method_type("tools/call"), McpMethod::ToolsCall);
+        assert_eq!(
+            McpRouter::get_method_type("tools/list"),
+            McpMethod::ToolsList
+        );
+        assert_eq!(
+            McpRouter::get_method_type("tools/call"),
+            McpMethod::ToolsCall
+        );
         assert_eq!(
             McpRouter::get_method_type("unknown/method"),
             McpMethod::Unknown

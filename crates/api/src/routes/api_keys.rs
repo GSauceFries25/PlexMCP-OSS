@@ -15,7 +15,7 @@ use crate::{
     error::{ApiError, ApiResult},
     state::AppState,
 };
-use plexmcp_shared::types::{SubscriptionTier, CustomLimits, EffectiveLimits};
+use plexmcp_shared::types::{CustomLimits, EffectiveLimits, SubscriptionTier};
 
 // =============================================================================
 // Request/Response Types
@@ -115,7 +115,7 @@ pub struct ApiKeyDetailResponse {
 pub struct ApiKeyCreatedResponse {
     pub id: Uuid,
     pub name: String,
-    pub key: String,  // Full key - only shown once on creation
+    pub key: String, // Full key - only shown once on creation
     pub key_prefix: String,
     pub scopes: Vec<String>,
     pub rate_limit_rpm: i32,
@@ -129,7 +129,7 @@ pub struct ApiKeyCreatedResponse {
 pub struct ApiKeyRotatedResponse {
     pub id: Uuid,
     pub name: String,
-    pub key: String,  // New full key - only shown once
+    pub key: String, // New full key - only shown once
     pub key_prefix: String,
     pub old_key_prefix: String,
     #[serde(with = "time::serde::rfc3339")]
@@ -205,7 +205,7 @@ pub async fn list_api_keys(
             FROM api_keys
             WHERE org_id = $1
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .bind(org_id)
         .fetch_all(&state.pool)
@@ -220,7 +220,7 @@ pub async fn list_api_keys(
             FROM api_keys
             WHERE org_id = $1 AND created_by = $2
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(auth_user.user_id)
@@ -233,8 +233,7 @@ pub async fn list_api_keys(
     let api_keys: Vec<ApiKeySummary> = keys
         .into_iter()
         .map(|k| {
-            let scopes: Vec<String> = serde_json::from_value(k.scopes.clone())
-                .unwrap_or_default();
+            let scopes: Vec<String> = serde_json::from_value(k.scopes.clone()).unwrap_or_default();
             ApiKeySummary {
                 id: k.id,
                 name: k.name,
@@ -275,7 +274,7 @@ pub async fn get_api_key(
                mcp_access_mode, allowed_mcp_ids
         FROM api_keys
         WHERE id = $1 AND org_id = $2
-        "#
+        "#,
     )
     .bind(key_id)
     .bind(org_id)
@@ -284,10 +283,9 @@ pub async fn get_api_key(
     .ok_or(ApiError::NotFound)?;
 
     // Members can only view their own keys
-    if auth_user.role.as_str() == "member"
-        && key.created_by != auth_user.user_id {
-            return Err(ApiError::Forbidden);
-        }
+    if auth_user.role.as_str() == "member" && key.created_by != auth_user.user_id {
+        return Err(ApiError::Forbidden);
+    }
 
     let scopes: Vec<String> = serde_json::from_value(key.scopes).unwrap_or_default();
 
@@ -324,7 +322,7 @@ pub async fn create_api_key(
     // Validate name
     if req.name.trim().is_empty() || req.name.len() > 100 {
         return Err(ApiError::Validation(
-            "API key name must be between 1 and 100 characters".to_string()
+            "API key name must be between 1 and 100 characters".to_string(),
         ));
     }
 
@@ -332,7 +330,7 @@ pub async fn create_api_key(
     let rate_limit_rpm = req.rate_limit_rpm.unwrap_or(60);
     if !(1..=10000).contains(&rate_limit_rpm) {
         return Err(ApiError::Validation(
-            "Rate limit must be between 1 and 10000 requests per minute".to_string()
+            "Rate limit must be between 1 and 10000 requests per minute".to_string(),
         ));
     }
 
@@ -342,12 +340,10 @@ pub async fn create_api_key(
 
     // Only check limit if tier has a limit (not unlimited)
     if max_keys != u32::MAX {
-        let key_count: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM api_keys WHERE org_id = $1"
-        )
-        .bind(org_id)
-        .fetch_one(&state.pool)
-        .await?;
+        let key_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM api_keys WHERE org_id = $1")
+            .bind(org_id)
+            .fetch_one(&state.pool)
+            .await?;
 
         if key_count.0 >= max_keys as i64 {
             return Err(ApiError::QuotaExceeded(format!(
@@ -366,19 +362,24 @@ pub async fn create_api_key(
     // Calculate expiration - support both expires_in_days (integer) and expires_at (ISO string)
     let expires_at = if let Some(expires_at_str) = &req.expires_at {
         // Parse ISO 8601 date string from frontend
-        time::OffsetDateTime::parse(expires_at_str, &time::format_description::well_known::Rfc3339)
+        time::OffsetDateTime::parse(
+            expires_at_str,
+            &time::format_description::well_known::Rfc3339,
+        )
+        .ok()
+        .or_else(|| {
+            // Try parsing as date-only (YYYY-MM-DD) and add time
+            time::Date::parse(
+                expires_at_str,
+                &time::format_description::parse("[year]-[month]-[day]").ok()?,
+            )
             .ok()
-            .or_else(|| {
-                // Try parsing as date-only (YYYY-MM-DD) and add time
-                time::Date::parse(expires_at_str, &time::format_description::parse("[year]-[month]-[day]").ok()?)
-                    .ok()
-                    .and_then(|d| d.with_hms(23, 59, 59).ok())
-                    .map(|dt| dt.assume_utc())
-            })
-    } else {
-        req.expires_in_days.map(|days| {
-            OffsetDateTime::now_utc() + time::Duration::days(days as i64)
+            .and_then(|d| d.with_hms(23, 59, 59).ok())
+            .map(|dt| dt.assume_utc())
         })
+    } else {
+        req.expires_in_days
+            .map(|days| OffsetDateTime::now_utc() + time::Duration::days(days as i64))
     };
 
     // Insert into database
@@ -389,7 +390,7 @@ pub async fn create_api_key(
     let mcp_access_mode = req.mcp_access_mode.as_str();
     if !["all", "selected", "none"].contains(&mcp_access_mode) {
         return Err(ApiError::Validation(
-            "mcp_access_mode must be 'all', 'selected', or 'none'".to_string()
+            "mcp_access_mode must be 'all', 'selected', or 'none'".to_string(),
         ));
     }
 
@@ -398,7 +399,9 @@ pub async fn create_api_key(
         if let Some(user_id) = auth_user.user_id {
             super::pin::verify_user_pin(&state.pool, user_id, pin).await?;
         } else {
-            return Err(ApiError::Validation("User ID required for PIN encryption".to_string()));
+            return Err(ApiError::Validation(
+                "User ID required for PIN encryption".to_string(),
+            ));
         }
     }
 
@@ -425,7 +428,10 @@ pub async fn create_api_key(
     // If PIN is provided, encrypt and store the key for later reveal
     if let Some(ref pin) = req.pin {
         if let Some(user_id) = auth_user.user_id {
-            if let Err(e) = super::pin::encrypt_and_store_key(&state.pool, user_id, key_id, &full_key, pin).await {
+            if let Err(e) =
+                super::pin::encrypt_and_store_key(&state.pool, user_id, key_id, &full_key, pin)
+                    .await
+            {
                 tracing::warn!(key_id = %key_id, error = %e, "Failed to encrypt API key - key created but not revealable");
             }
         }
@@ -468,26 +474,24 @@ pub async fn update_api_key(
         created_by: Option<Uuid>,
     }
 
-    let existing: KeyOwnerRow = sqlx::query_as(
-        "SELECT id, created_by FROM api_keys WHERE id = $1 AND org_id = $2"
-    )
-    .bind(key_id)
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(ApiError::NotFound)?;
+    let existing: KeyOwnerRow =
+        sqlx::query_as("SELECT id, created_by FROM api_keys WHERE id = $1 AND org_id = $2")
+            .bind(key_id)
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or(ApiError::NotFound)?;
 
     // Members can only update their own keys
-    if auth_user.role.as_str() == "member"
-        && existing.created_by != auth_user.user_id {
-            return Err(ApiError::Forbidden);
-        }
+    if auth_user.role.as_str() == "member" && existing.created_by != auth_user.user_id {
+        return Err(ApiError::Forbidden);
+    }
 
     // Update name if provided
     if let Some(ref name) = req.name {
         if name.trim().is_empty() || name.len() > 100 {
             return Err(ApiError::Validation(
-                "API key name must be between 1 and 100 characters".to_string()
+                "API key name must be between 1 and 100 characters".to_string(),
             ));
         }
 
@@ -512,7 +516,7 @@ pub async fn update_api_key(
     if let Some(rate_limit_rpm) = req.rate_limit_rpm {
         if !(1..=10000).contains(&rate_limit_rpm) {
             return Err(ApiError::Validation(
-                "Rate limit must be between 1 and 10000 requests per minute".to_string()
+                "Rate limit must be between 1 and 10000 requests per minute".to_string(),
             ));
         }
 
@@ -527,7 +531,7 @@ pub async fn update_api_key(
     if let Some(ref mcp_access_mode) = req.mcp_access_mode {
         if !["all", "selected", "none"].contains(&mcp_access_mode.as_str()) {
             return Err(ApiError::Validation(
-                "mcp_access_mode must be 'all', 'selected', or 'none'".to_string()
+                "mcp_access_mode must be 'all', 'selected', or 'none'".to_string(),
             ));
         }
 
@@ -554,15 +558,21 @@ pub async fn update_api_key(
             None
         } else {
             // Parse ISO 8601 date string
-            let parsed = time::OffsetDateTime::parse(expires_at_str, &time::format_description::well_known::Rfc3339)
+            let parsed = time::OffsetDateTime::parse(
+                expires_at_str,
+                &time::format_description::well_known::Rfc3339,
+            )
+            .ok()
+            .or_else(|| {
+                // Try parsing as date-only (YYYY-MM-DD) and set time to end of day
+                time::Date::parse(
+                    expires_at_str,
+                    &time::format_description::parse("[year]-[month]-[day]").ok()?,
+                )
                 .ok()
-                .or_else(|| {
-                    // Try parsing as date-only (YYYY-MM-DD) and set time to end of day
-                    time::Date::parse(expires_at_str, &time::format_description::parse("[year]-[month]-[day]").ok()?)
-                        .ok()
-                        .and_then(|d| d.with_hms(23, 59, 59).ok())
-                    .map(|dt| dt.assume_utc())
-                });
+                .and_then(|d| d.with_hms(23, 59, 59).ok())
+                .map(|dt| dt.assume_utc())
+            });
 
             if parsed.is_none() {
                 return Err(ApiError::Validation(
@@ -574,7 +584,7 @@ pub async fn update_api_key(
             if let Some(exp) = parsed {
                 if exp <= time::OffsetDateTime::now_utc() {
                     return Err(ApiError::Validation(
-                        "Expiration date must be in the future".to_string()
+                        "Expiration date must be in the future".to_string(),
                     ));
                 }
             }
@@ -597,7 +607,7 @@ pub async fn update_api_key(
                mcp_access_mode, allowed_mcp_ids
         FROM api_keys
         WHERE id = $1
-        "#
+        "#,
     )
     .bind(key_id)
     .fetch_one(&state.pool)
@@ -643,7 +653,7 @@ pub async fn rotate_api_key(
                mcp_access_mode, allowed_mcp_ids
         FROM api_keys
         WHERE id = $1 AND org_id = $2
-        "#
+        "#,
     )
     .bind(key_id)
     .bind(org_id)
@@ -652,10 +662,9 @@ pub async fn rotate_api_key(
     .ok_or(ApiError::NotFound)?;
 
     // Members can only rotate their own keys
-    if auth_user.role.as_str() == "member"
-        && current.created_by != auth_user.user_id {
-            return Err(ApiError::Forbidden);
-        }
+    if auth_user.role.as_str() == "member" && current.created_by != auth_user.user_id {
+        return Err(ApiError::Forbidden);
+    }
 
     let old_prefix = current.key_prefix.clone();
 
@@ -671,7 +680,9 @@ pub async fn rotate_api_key(
             if let Some(user_id) = auth_user.user_id {
                 super::pin::verify_user_pin(&state.pool, user_id, pin).await?;
             } else {
-                return Err(ApiError::Validation("User ID required for PIN encryption".to_string()));
+                return Err(ApiError::Validation(
+                    "User ID required for PIN encryption".to_string(),
+                ));
             }
         }
     }
@@ -690,7 +701,10 @@ pub async fn rotate_api_key(
     if let Some(Json(req)) = body {
         if let Some(ref pin) = req.pin {
             if let Some(user_id) = auth_user.user_id {
-                if let Err(e) = super::pin::encrypt_and_store_key(&state.pool, user_id, key_id, &full_key, pin).await {
+                if let Err(e) =
+                    super::pin::encrypt_and_store_key(&state.pool, user_id, key_id, &full_key, pin)
+                        .await
+                {
                     tracing::warn!(key_id = %key_id, error = %e, "Failed to encrypt rotated API key - key rotated but not revealable");
                 }
             }
@@ -728,20 +742,18 @@ pub async fn delete_api_key(
         created_by: Option<Uuid>,
     }
 
-    let existing: KeyOwnerRow = sqlx::query_as(
-        "SELECT id, created_by FROM api_keys WHERE id = $1 AND org_id = $2"
-    )
-    .bind(key_id)
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(ApiError::NotFound)?;
+    let existing: KeyOwnerRow =
+        sqlx::query_as("SELECT id, created_by FROM api_keys WHERE id = $1 AND org_id = $2")
+            .bind(key_id)
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or(ApiError::NotFound)?;
 
     // Members can only delete their own keys
-    if auth_user.role.as_str() == "member"
-        && existing.created_by != auth_user.user_id {
-            return Err(ApiError::Forbidden);
-        }
+    if auth_user.role.as_str() == "member" && existing.created_by != auth_user.user_id {
+        return Err(ApiError::Forbidden);
+    }
 
     let result = sqlx::query("DELETE FROM api_keys WHERE id = $1 AND org_id = $2")
         .bind(key_id)
@@ -777,7 +789,7 @@ pub async fn get_api_key_usage(
                mcp_access_mode, allowed_mcp_ids
         FROM api_keys
         WHERE id = $1 AND org_id = $2
-        "#
+        "#,
     )
     .bind(key_id)
     .bind(org_id)
@@ -786,10 +798,9 @@ pub async fn get_api_key_usage(
     .ok_or(ApiError::NotFound)?;
 
     // Members can only view usage for their own keys
-    if auth_user.role.as_str() == "member"
-        && key.created_by != auth_user.user_id {
-            return Err(ApiError::Forbidden);
-        }
+    if auth_user.role.as_str() == "member" && key.created_by != auth_user.user_id {
+        return Err(ApiError::Forbidden);
+    }
 
     // Get current period usage
     let period_start = OffsetDateTime::now_utc()
@@ -813,7 +824,7 @@ pub async fn get_api_key_usage(
             AVG(latency_ms_avg)::INTEGER as avg_latency
         FROM usage_records
         WHERE api_key_id = $1 AND period_start >= $2
-        "#
+        "#,
     )
     .bind(key_id)
     .bind(period_start)
@@ -856,19 +867,25 @@ struct OrgLimitData {
 }
 
 /// Get organization's effective limits (tier + custom overrides)
-async fn get_org_effective_limits(pool: &sqlx::PgPool, org_id: Uuid) -> Result<EffectiveLimits, crate::error::ApiError> {
+async fn get_org_effective_limits(
+    pool: &sqlx::PgPool,
+    org_id: Uuid,
+) -> Result<EffectiveLimits, crate::error::ApiError> {
     let result: Option<OrgLimitData> = sqlx::query_as(
         r#"SELECT subscription_tier, custom_max_mcps, custom_max_api_keys,
                   custom_max_team_members, custom_max_requests_monthly,
                   custom_overage_rate_cents, custom_monthly_price_cents
-           FROM organizations WHERE id = $1"#
+           FROM organizations WHERE id = $1"#,
     )
     .bind(org_id)
     .fetch_optional(pool)
     .await?;
 
     let data = result.ok_or(crate::error::ApiError::NotFound)?;
-    let tier: SubscriptionTier = data.subscription_tier.parse().unwrap_or(SubscriptionTier::Free);
+    let tier: SubscriptionTier = data
+        .subscription_tier
+        .parse()
+        .unwrap_or(SubscriptionTier::Free);
     let custom = CustomLimits {
         max_mcps: data.custom_max_mcps.map(|v| v as u32),
         max_api_keys: data.custom_max_api_keys.map(|v| v as u32),

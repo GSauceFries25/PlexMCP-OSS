@@ -29,7 +29,9 @@ impl BillingHistoryService {
         start_date: Option<OffsetDateTime>,
         end_date: Option<OffsetDateTime>,
     ) -> BillingResult<String> {
-        let records = self.get_billing_history(org_id, start_date, end_date).await?;
+        let records = self
+            .get_billing_history(org_id, start_date, end_date)
+            .await?;
 
         let mut csv = String::new();
 
@@ -38,7 +40,9 @@ impl BillingHistoryService {
 
         for record in records {
             let amount_dollars = record.amount_cents as f64 / 100.0;
-            let date = record.created_at.format(&time::format_description::well_known::Rfc3339)
+            let date = record
+                .created_at
+                .format(&time::format_description::well_known::Rfc3339)
                 .unwrap_or_else(|_| "unknown".to_string());
 
             // Escape CSV fields
@@ -47,12 +51,7 @@ impl BillingHistoryService {
 
             csv.push_str(&format!(
                 "{},{},{},{:.2},{},{}\n",
-                date,
-                record.record_type,
-                description,
-                amount_dollars,
-                record.status,
-                reference
+                date, record.record_type, description, amount_dollars, record.status, reference
             ));
         }
 
@@ -88,7 +87,7 @@ impl BillingHistoryService {
               AND created_at >= $2
               AND created_at <= $3
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(start)
@@ -123,7 +122,7 @@ impl BillingHistoryService {
               AND created_at >= $2
               AND created_at <= $3
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(start)
@@ -136,7 +135,10 @@ impl BillingHistoryService {
             records.push(BillingHistoryRecord {
                 created_at: row.created_at,
                 record_type: "overage".to_string(),
-                description: format!("{} overage ({} units)", row.resource_type, row.overage_amount),
+                description: format!(
+                    "{} overage ({} units)",
+                    row.resource_type, row.overage_amount
+                ),
                 amount_cents: row.total_charge_cents,
                 status: row.status,
                 reference: row.stripe_invoice_item_id,
@@ -158,7 +160,7 @@ impl BillingHistoryService {
               AND created_at >= $2
               AND created_at <= $3
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(start)
@@ -192,7 +194,7 @@ impl BillingHistoryService {
               AND created_at >= $2
               AND created_at <= $3
             ORDER BY created_at DESC
-            "#
+            "#,
         )
         .bind(org_id)
         .bind(start)
@@ -237,7 +239,8 @@ impl BillingHistoryService {
         .unwrap_or_default(); // billing_events might not exist in all deployments
 
         for row in events {
-            let amount = row.event_data
+            let amount = row
+                .event_data
                 .get("amount_cents")
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0) as i32;
@@ -273,7 +276,9 @@ impl BillingHistoryService {
         start_date: Option<OffsetDateTime>,
         end_date: Option<OffsetDateTime>,
     ) -> BillingResult<BillingSummary> {
-        let records = self.get_billing_history(org_id, start_date, end_date).await?;
+        let records = self
+            .get_billing_history(org_id, start_date, end_date)
+            .await?;
 
         let mut total_charges = 0i64;
         let mut total_refunds = 0i64;
@@ -298,7 +303,8 @@ impl BillingHistoryService {
 
         Ok(BillingSummary {
             org_id,
-            period_start: start_date.unwrap_or_else(|| OffsetDateTime::now_utc() - time::Duration::days(365)),
+            period_start: start_date
+                .unwrap_or_else(|| OffsetDateTime::now_utc() - time::Duration::days(365)),
             period_end: end_date.unwrap_or_else(OffsetDateTime::now_utc),
             total_charges_cents: total_charges,
             total_refunds_cents: total_refunds,

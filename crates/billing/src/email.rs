@@ -79,7 +79,8 @@ impl BillingEmailService {
             return Ok(false);
         }
 
-        #[allow(clippy::disallowed_methods)] // json! macro uses unwrap internally, safe for primitive types
+        #[allow(clippy::disallowed_methods)]
+        // json! macro uses unwrap internally, safe for primitive types
         let body = serde_json::json!({
             "from": self.config.email_from,
             "to": [to],
@@ -90,7 +91,10 @@ impl BillingEmailService {
         let response = self
             .client
             .post("https://api.resend.com/emails")
-            .header("Authorization", format!("Bearer {}", self.config.resend_api_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", self.config.resend_api_key),
+            )
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
@@ -136,7 +140,12 @@ impl BillingEmailService {
         let amount = format!("${:.2}", amount_cents as f64 / 100.0);
         let update_link = format!("{}/billing", self.config.dashboard_url);
         let invoice_section = invoice_url
-            .map(|url| format!(r#"<p><a href="{}" style="color: #6366f1;">View Invoice</a></p>"#, url))
+            .map(|url| {
+                format!(
+                    r#"<p><a href="{}" style="color: #6366f1;">View Invoice</a></p>"#,
+                    url
+                )
+            })
             .unwrap_or_default();
 
         let html = format!(
@@ -169,8 +178,12 @@ impl BillingEmailService {
             app_name = self.config.app_name,
         );
 
-        self.send_email(to, &format!("Payment Failed - {}", self.config.app_name), &html)
-            .await
+        self.send_email(
+            to,
+            &format!("Payment Failed - {}", self.config.app_name),
+            &html,
+        )
+        .await
     }
 
     /// Send payment failed notification (with error message from Stripe)
@@ -216,8 +229,12 @@ impl BillingEmailService {
             app_name = self.config.app_name,
         );
 
-        self.send_email(to, &format!("Payment Failed - {}", self.config.app_name), &html)
-            .await
+        self.send_email(
+            to,
+            &format!("Payment Failed - {}", self.config.app_name),
+            &html,
+        )
+        .await
     }
 
     /// Send upcoming invoice notification (sent ~3 days before billing)
@@ -282,8 +299,12 @@ impl BillingEmailService {
             app_name = self.config.app_name,
         );
 
-        self.send_email(to, &format!("Upcoming Invoice - {}", self.config.app_name), &html)
-            .await
+        self.send_email(
+            to,
+            &format!("Upcoming Invoice - {}", self.config.app_name),
+            &html,
+        )
+        .await
     }
 
     /// Send dispute alert notification (CRITICAL - chargebacks are serious)
@@ -382,7 +403,10 @@ impl BillingEmailService {
 
         self.send_email(
             to,
-            &format!("Trial Ending in {} Days - {}", days_remaining, self.config.app_name),
+            &format!(
+                "Trial Ending in {} Days - {}",
+                days_remaining, self.config.app_name
+            ),
             &html,
         )
         .await
@@ -425,7 +449,10 @@ impl BillingEmailService {
 
         self.send_email(
             to,
-            &format!("Action Required: Subscription Past Due - {}", self.config.app_name),
+            &format!(
+                "Action Required: Subscription Past Due - {}",
+                self.config.app_name
+            ),
             &html,
         )
         .await
@@ -526,7 +553,10 @@ impl BillingEmailService {
 
         self.send_email(
             to,
-            &format!("Plan Changed to {} - {}", tier_display, self.config.app_name),
+            &format!(
+                "Plan Changed to {} - {}",
+                tier_display, self.config.app_name
+            ),
             &html,
         )
         .await
@@ -703,7 +733,10 @@ impl BillingEmailService {
 
         self.send_email(
             to,
-            &format!("Instant Overage Charge: {} - {}", amount, self.config.app_name),
+            &format!(
+                "Instant Overage Charge: {} - {}",
+                amount, self.config.app_name
+            ),
             &html,
         )
         .await
@@ -763,11 +796,7 @@ impl BillingEmailService {
     }
 
     /// Send member suspended notification (due to plan downgrade)
-    pub async fn send_member_suspended(
-        &self,
-        to: &str,
-        new_tier: &str,
-    ) -> BillingResult<bool> {
+    pub async fn send_member_suspended(&self, to: &str, new_tier: &str) -> BillingResult<bool> {
         let tier_display = match new_tier {
             "free" => "Free",
             "pro" => "Pro",

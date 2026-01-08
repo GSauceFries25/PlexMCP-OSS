@@ -42,7 +42,7 @@ pub async fn save_session(
           AND revoked_at IS NULL
           AND expires_at > NOW()
           AND token_type = 'refresh'
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_one(&mut *tx)
@@ -70,7 +70,7 @@ pub async fn save_session(
                 ORDER BY created_at ASC
                 LIMIT 1
             )
-            "#
+            "#,
         )
         .bind(user_id)
         .execute(&mut *tx)
@@ -153,11 +153,7 @@ pub async fn is_session_valid(pool: &PgPool, jti: &str, expected_user_id: Uuid) 
 /// Revoke a specific session by JTI
 ///
 /// Returns true if the session was found and revoked, false if not found.
-pub async fn revoke_session(
-    pool: &PgPool,
-    jti: &str,
-    reason: &str,
-) -> ApiResult<bool> {
+pub async fn revoke_session(pool: &PgPool, jti: &str, reason: &str) -> ApiResult<bool> {
     let rows_affected = sqlx::query(
         r#"
         UPDATE user_sessions
@@ -182,11 +178,7 @@ pub async fn revoke_session(
 /// - User changes their password
 /// - User is locked out or banned
 /// - Security incident requires force logout
-pub async fn revoke_all_sessions(
-    pool: &PgPool,
-    user_id: Uuid,
-    reason: &str,
-) -> ApiResult<u64> {
+pub async fn revoke_all_sessions(pool: &PgPool, user_id: Uuid, reason: &str) -> ApiResult<u64> {
     let rows_affected = sqlx::query(
         r#"
         UPDATE user_sessions
@@ -218,10 +210,7 @@ pub struct UserSession {
     pub token_type: String,
 }
 
-pub async fn list_sessions(
-    pool: &PgPool,
-    user_id: Uuid,
-) -> ApiResult<Vec<UserSession>> {
+pub async fn list_sessions(pool: &PgPool, user_id: Uuid) -> ApiResult<Vec<UserSession>> {
     let sessions = sqlx::query_as::<_, UserSession>(
         r#"
         SELECT

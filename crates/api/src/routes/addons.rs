@@ -21,15 +21,11 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use plexmcp_billing::{AddonType, AddonCategory};
+use plexmcp_billing::{AddonCategory, AddonType};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    auth::AuthUser,
-    error::ApiError,
-    state::AppState,
-};
+use crate::{auth::AuthUser, error::ApiError, state::AppState};
 
 /// Add-on info response
 #[derive(Debug, Serialize)]
@@ -141,7 +137,8 @@ pub async fn list_addons(
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<AddonsListResponse>, ApiError> {
     // Use org_id if available, otherwise use user_id as the customer_id
-    let org_id = auth_user.org_id
+    let org_id = auth_user
+        .org_id
         .or(auth_user.user_id)
         .ok_or(ApiError::NoOrganization)?;
 
@@ -154,14 +151,16 @@ pub async fn list_addons(
     let tier_result: Option<(String,)> = sqlx::query_as(
         "SELECT COALESCE(subscription_tier, 'free') as tier FROM organizations
          WHERE id = $1
-         LIMIT 1"
+         LIMIT 1",
     )
     .bind(org_id)
     .fetch_optional(&state.pool)
     .await
     .map_err(|e| ApiError::Database(format!("Database error: {}", e)))?;
 
-    let tier = tier_result.map(|(t,)| t).unwrap_or_else(|| "free".to_string());
+    let tier = tier_result
+        .map(|(t,)| t)
+        .unwrap_or_else(|| "free".to_string());
 
     tracing::info!(
         org_id = %org_id,
@@ -178,7 +177,7 @@ pub async fn list_addons(
     // Get active add-ons for this organization with quantities and prices
     let active_addons: Vec<(String, Option<i32>, Option<i32>)> = sqlx::query_as(
         "SELECT addon_type, COALESCE(quantity, 1), unit_price_cents FROM subscription_addons
-         WHERE org_id = $1 AND status = 'active'"
+         WHERE org_id = $1 AND status = 'active'",
     )
     .bind(org_id)
     .fetch_all(&state.pool)
@@ -186,7 +185,8 @@ pub async fn list_addons(
     .unwrap_or_default();
 
     // Build lookup map of addon_type -> quantity and calculate current spend
-    let mut addon_quantities: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+    let mut addon_quantities: std::collections::HashMap<String, i32> =
+        std::collections::HashMap::new();
     let mut current_spend_cents: i32 = 0;
 
     for (addon_type_str, qty, price) in active_addons {
@@ -203,7 +203,11 @@ pub async fn list_addons(
     }
 
     // Calculate spend info
-    let price_cap_cents = if is_free_tier { Some(FREE_TIER_ADDON_CAP_CENTS) } else { None };
+    let price_cap_cents = if is_free_tier {
+        Some(FREE_TIER_ADDON_CAP_CENTS)
+    } else {
+        None
+    };
     let at_price_cap = is_free_tier && current_spend_cents >= FREE_TIER_ADDON_CAP_CENTS;
 
     let upgrade_message = if is_free_tier {
@@ -245,7 +249,9 @@ pub async fn list_addons(
             // Build availability message for locked add-ons
             let availability_message = if !available {
                 Some("Upgrade to Pro to unlock".to_string())
-            } else if addon_type.is_included_in_pro() && !matches!(tier.as_str(), "pro" | "team" | "enterprise") {
+            } else if addon_type.is_included_in_pro()
+                && !matches!(tier.as_str(), "pro" | "team" | "enterprise")
+            {
                 Some("Included free with Pro".to_string())
             } else {
                 None
@@ -305,10 +311,10 @@ pub async fn enable_addon(
     Path(addon_type): Path<String>,
     Json(request): Json<EnableAddonRequest>,
 ) -> Result<Json<EnableAddonResponse>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
-    let org_id = auth_user.org_id
+    let org_id = auth_user
+        .org_id
         .or(auth_user.user_id)
         .ok_or(ApiError::NoOrganization)?;
 
@@ -320,19 +326,23 @@ pub async fn enable_addon(
     let tier_result: Option<(String,)> = sqlx::query_as(
         "SELECT COALESCE(subscription_tier, 'free') as tier FROM organizations
          WHERE id = $1
-         LIMIT 1"
+         LIMIT 1",
     )
     .bind(org_id)
     .fetch_optional(&state.pool)
     .await
     .map_err(|e| ApiError::Database(format!("Database error: {}", e)))?;
 
-    let tier = tier_result.map(|(t,)| t).unwrap_or_else(|| "free".to_string());
+    let tier = tier_result
+        .map(|(t,)| t)
+        .unwrap_or_else(|| "free".to_string());
     let is_free_tier = matches!(tier.as_str(), "free" | "starter");
 
     // Team/Enterprise get add-ons free, Free/Starter/Pro can purchase
     if matches!(tier.as_str(), "team" | "enterprise") {
-        return Err(ApiError::BadRequest("Add-ons are already included in your plan".to_string()));
+        return Err(ApiError::BadRequest(
+            "Add-ons are already included in your plan".to_string(),
+        ));
     }
 
     // Check tier availability for this add-on
@@ -365,7 +375,7 @@ pub async fn enable_addon(
         // Calculate current spend
         let active_addons: Vec<(String, Option<i32>, Option<i32>)> = sqlx::query_as(
             "SELECT addon_type, COALESCE(quantity, 1), unit_price_cents FROM subscription_addons
-             WHERE org_id = $1 AND status = 'active'"
+             WHERE org_id = $1 AND status = 'active'",
         )
         .bind(org_id)
         .fetch_all(&state.pool)
@@ -411,25 +421,28 @@ pub async fn enable_addon(
     );
 
     // Get the Stripe customer ID for this org
-    let customer_id: Option<(Option<String>,)> = sqlx::query_as(
-        "SELECT stripe_customer_id FROM organizations WHERE id = $1"
-    )
-    .bind(org_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| ApiError::Database(format!("Database error: {}", e)))?;
+    let customer_id: Option<(Option<String>,)> =
+        sqlx::query_as("SELECT stripe_customer_id FROM organizations WHERE id = $1")
+            .bind(org_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| ApiError::Database(format!("Database error: {}", e)))?;
 
-    let customer_id = customer_id
-        .and_then(|(c,)| c)
-        .ok_or_else(|| ApiError::BadRequest("No Stripe customer found. Please set up billing first.".to_string()))?;
+    let customer_id = customer_id.and_then(|(c,)| c).ok_or_else(|| {
+        ApiError::BadRequest("No Stripe customer found. Please set up billing first.".to_string())
+    })?;
 
     // Get the price ID for this add-on
-    let price_id = billing.subscriptions.stripe().config()
+    let price_id = billing
+        .subscriptions
+        .stripe()
+        .config()
         .addon_price_id(&addon_type)
         .ok_or_else(|| ApiError::BadRequest(format!("No price configured for {}", addon_type)))?;
 
     // Create a checkout session for this add-on
-    let session = billing.checkout
+    let session = billing
+        .checkout
         .create_addon_checkout(org_id, &customer_id, &addon_type, &price_id, quantity)
         .await
         .map_err(|e| {
@@ -442,9 +455,9 @@ pub async fn enable_addon(
             ApiError::Database(format!("Failed to create checkout: {}", e))
         })?;
 
-    let checkout_url = session.url.ok_or_else(|| {
-        ApiError::Database("Checkout session has no URL".to_string())
-    })?;
+    let checkout_url = session
+        .url
+        .ok_or_else(|| ApiError::Database("Checkout session has no URL".to_string()))?;
 
     Ok(Json(EnableAddonResponse::CheckoutRequired {
         session_id: session.id.to_string(),
@@ -459,10 +472,10 @@ pub async fn disable_addon(
     Extension(auth_user): Extension<AuthUser>,
     Path(addon_type): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
-    let org_id = auth_user.org_id
+    let org_id = auth_user
+        .org_id
         .or(auth_user.user_id)
         .ok_or(ApiError::NoOrganization)?;
 
@@ -490,10 +503,10 @@ pub async fn check_addon(
     Extension(auth_user): Extension<AuthUser>,
     Path(addon_type): Path<String>,
 ) -> Result<Json<bool>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
-    let org_id = auth_user.org_id
+    let org_id = auth_user
+        .org_id
         .or(auth_user.user_id)
         .ok_or(ApiError::NoOrganization)?;
 
@@ -505,14 +518,16 @@ pub async fn check_addon(
     let tier_result: Option<(String,)> = sqlx::query_as(
         "SELECT COALESCE(subscription_tier, 'free') as tier FROM organizations
          WHERE id = $1
-         LIMIT 1"
+         LIMIT 1",
     )
     .bind(org_id)
     .fetch_optional(&state.pool)
     .await
     .map_err(|e| ApiError::Database(format!("Database error: {}", e)))?;
 
-    let tier = tier_result.map(|(t,)| t).unwrap_or_else(|| "free".to_string());
+    let tier = tier_result
+        .map(|(t,)| t)
+        .unwrap_or_else(|| "free".to_string());
 
     // Team/Enterprise always have all add-ons
     if matches!(tier.as_str(), "team" | "enterprise") {
@@ -540,10 +555,10 @@ pub async fn update_addon_quantity(
     Path(addon_type): Path<String>,
     Json(request): Json<UpdateAddonQuantityRequest>,
 ) -> Result<Json<AddonInfo>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
-    let org_id = auth_user.org_id
+    let org_id = auth_user
+        .org_id
         .or(auth_user.user_id)
         .ok_or(ApiError::NoOrganization)?;
 
@@ -562,7 +577,7 @@ pub async fn update_addon_quantity(
     // Validate quantity
     if request.quantity == 0 {
         return Err(ApiError::BadRequest(
-            "Use disable endpoint to remove add-on entirely".to_string()
+            "Use disable endpoint to remove add-on entirely".to_string(),
         ));
     }
 
@@ -570,14 +585,16 @@ pub async fn update_addon_quantity(
     let tier_result: Option<(String,)> = sqlx::query_as(
         "SELECT COALESCE(subscription_tier, 'free') as tier FROM organizations
          WHERE id = $1
-         LIMIT 1"
+         LIMIT 1",
     )
     .bind(org_id)
     .fetch_optional(&state.pool)
     .await
     .map_err(|e| ApiError::Database(format!("Database error: {}", e)))?;
 
-    let tier = tier_result.map(|(t,)| t).unwrap_or_else(|| "free".to_string());
+    let tier = tier_result
+        .map(|(t,)| t)
+        .unwrap_or_else(|| "free".to_string());
     let is_free_tier = matches!(tier.as_str(), "free" | "starter");
 
     // For Free tier, check price cap before allowing quantity increase
@@ -585,7 +602,7 @@ pub async fn update_addon_quantity(
         // Calculate current spend (excluding this addon type)
         let active_addons: Vec<(String, Option<i32>, Option<i32>)> = sqlx::query_as(
             "SELECT addon_type, COALESCE(quantity, 1), unit_price_cents FROM subscription_addons
-             WHERE org_id = $1 AND status = 'active'"
+             WHERE org_id = $1 AND status = 'active'",
         )
         .bind(org_id)
         .fetch_all(&state.pool)
@@ -643,7 +660,9 @@ pub async fn update_addon_quantity(
         status: result.status,
         price_cents: result.unit_price_cents.unwrap_or(0),
         quantity: result.quantity.unwrap_or(1),
-        created_at: result.created_at.format(&time::format_description::well_known::Rfc3339)
+        created_at: result
+            .created_at
+            .format(&time::format_description::well_known::Rfc3339)
             .unwrap_or_default(),
     }))
 }
@@ -653,10 +672,10 @@ pub async fn get_addon_quantities(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<plexmcp_billing::AddonQuantities>, ApiError> {
-    let billing = state.billing.as_ref()
-        .ok_or(ApiError::ServiceUnavailable)?;
+    let billing = state.billing.as_ref().ok_or(ApiError::ServiceUnavailable)?;
 
-    let org_id = auth_user.org_id
+    let org_id = auth_user
+        .org_id
         .or(auth_user.user_id)
         .ok_or(ApiError::NoOrganization)?;
 

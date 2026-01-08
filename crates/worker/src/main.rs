@@ -16,15 +16,14 @@ use std::time::Duration;
 use plexmcp_api::email::SecurityEmailService;
 use plexmcp_billing::{BillingService, UsageReportResult};
 use sqlx::postgres::PgPoolOptions;
-use uuid::Uuid;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 /// Create a database connection pool
 async fn create_db_pool() -> anyhow::Result<sqlx::PgPool> {
-    #[allow(clippy::expect_used)]  // Fail-fast on startup if required config is missing
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
+    #[allow(clippy::expect_used)] // Fail-fast on startup if required config is missing
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -38,13 +37,16 @@ async fn create_db_pool() -> anyhow::Result<sqlx::PgPool> {
 
 /// Log results of usage reporting
 fn log_usage_results(results: &[UsageReportResult]) {
-    let reported = results.iter()
+    let reported = results
+        .iter()
         .filter(|r| matches!(r, UsageReportResult::Reported { .. }))
         .count();
-    let no_overage = results.iter()
+    let no_overage = results
+        .iter()
         .filter(|r| matches!(r, UsageReportResult::NoOverage { .. }))
         .count();
-    let errors = results.iter()
+    let errors = results
+        .iter()
         .filter(|r| matches!(r, UsageReportResult::Error { .. }))
         .count();
 
@@ -69,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"))
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
 
@@ -103,49 +105,49 @@ async fn main() -> anyhow::Result<()> {
     // Job 1: Report usage to Stripe every 6 hours
     // Cron: At minute 0 past every 6th hour (0:00, 6:00, 12:00, 18:00 UTC)
     let metered_service = billing.metered.clone();
-    scheduler.add(
-        Job::new_async("0 0 */6 * * *", move |_uuid, _l| {
+    scheduler
+        .add(Job::new_async("0 0 */6 * * *", move |_uuid, _l| {
             let service = metered_service.clone();
             Box::pin(async move {
                 info!("Running scheduled metered usage report to Stripe");
                 let results = service.report_all_usage().await;
                 log_usage_results(&results);
             })
-        })?
-    ).await?;
+        })?)
+        .await?;
     info!("Scheduled: Metered usage report (every 6 hours)");
 
     // Job 2: Final usage report before billing (end of day UTC)
     // Cron: At 23:55 every day - ensures final usage is captured before midnight billing
     let metered_service_final = billing.metered.clone();
-    scheduler.add(
-        Job::new_async("0 55 23 * * *", move |_uuid, _l| {
+    scheduler
+        .add(Job::new_async("0 55 23 * * *", move |_uuid, _l| {
             let service = metered_service_final.clone();
             Box::pin(async move {
                 info!("Running final daily usage report to Stripe");
                 let results = service.report_all_usage().await;
                 log_usage_results(&results);
             })
-        })?
-    ).await?;
+        })?)
+        .await?;
     info!("Scheduled: Final daily usage report (23:55 UTC)");
 
     // Job 3: Health check heartbeat (every 5 minutes)
-    scheduler.add(
-        Job::new_async("0 */5 * * * *", |_uuid, _l| {
+    scheduler
+        .add(Job::new_async("0 */5 * * * *", |_uuid, _l| {
             Box::pin(async move {
                 info!("Worker heartbeat - all systems operational");
             })
-        })?
-    ).await?;
+        })?)
+        .await?;
     info!("Scheduled: Health check heartbeat (every 5 minutes)");
 
     // Job 4: Calculate and update overage charges (every 15 minutes)
     // This populates overage_charges table in real-time for display and Pay Now functionality
     let overage_pool = pool.clone();
     let overage_billing = billing.clone();
-    scheduler.add(
-        Job::new_async("0 */15 * * * *", move |_uuid, _l| {
+    scheduler
+        .add(Job::new_async("0 */15 * * * *", move |_uuid, _l| {
             let pool = overage_pool.clone();
             let billing = overage_billing.clone();
             Box::pin(async move {
@@ -153,8 +155,9 @@ async fn main() -> anyhow::Result<()> {
 
                 // Get all orgs with Pro/Team subscriptions that have active billing periods
                 // Note: subscriptions.customer_id stores org_id as text
-                let orgs: Vec<(Uuid, String, time::OffsetDateTime, time::OffsetDateTime)> = sqlx::query_as(
-                    r#"
+                let orgs: Vec<(Uuid, String, time::OffsetDateTime, time::OffsetDateTime)> =
+                    sqlx::query_as(
+                        r#"
                     SELECT o.id, o.subscription_tier, s.current_period_start, s.current_period_end
                     FROM organizations o
                     JOIN subscriptions s ON s.customer_id = o.id::text
@@ -162,27 +165,27 @@ async fn main() -> anyhow::Result<()> {
                       AND s.status = 'active'
                       AND s.current_period_start IS NOT NULL
                       AND s.current_period_end IS NOT NULL
-                    "#
-                )
-                .fetch_all(&pool)
-                .await
-                .unwrap_or_default();
+                    "#,
+                    )
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap_or_default();
 
                 let total_orgs = orgs.len();
                 let mut updated = 0;
                 let mut errors = 0;
 
                 for (org_id, tier, period_start, period_end) in orgs {
-                    match billing.overage.create_or_update_current_overage(
-                        org_id,
-                        &tier,
-                        period_start,
-                        period_end,
-                    ).await {
+                    match billing
+                        .overage
+                        .create_or_update_current_overage(org_id, &tier, period_start, period_end)
+                        .await
+                    {
                         Ok(Some(_)) => {
                             updated += 1;
                             // Sync spend cap tracking (won't double-count)
-                            if let Err(e) = billing.spend_cap.sync_spend_from_overages(org_id).await {
+                            if let Err(e) = billing.spend_cap.sync_spend_from_overages(org_id).await
+                            {
                                 error!(org_id = %org_id, error = %e, "Failed to sync spend cap");
                             }
                         }
@@ -201,8 +204,8 @@ async fn main() -> anyhow::Result<()> {
                     "Overage charge calculation complete"
                 );
             })
-        })?
-    ).await?;
+        })?)
+        .await?;
     info!("Scheduled: Overage charge calculation (every 15 minutes)");
 
     // Job 5: Grace period enforcement (hourly)
@@ -364,8 +367,8 @@ async fn main() -> anyhow::Result<()> {
         .parse::<bool>()
         .unwrap_or(false);
 
-    scheduler.add(
-        Job::new_async("0 * * * * *", move |_uuid, _l| {
+    scheduler
+        .add(Job::new_async("0 * * * * *", move |_uuid, _l| {
             let pool = webhook_pool.clone();
             let api_key = resend_api_key.clone();
             let routing_enabled = enable_email_routing;
@@ -376,37 +379,39 @@ async fn main() -> anyhow::Result<()> {
                     &http_client,
                     &api_key,
                     routing_enabled,
-                ).await;
+                )
+                .await;
             })
-        })?
-    ).await?;
+        })?)
+        .await?;
     info!("Scheduled: Webhook queue processing (every minute)");
 
     // Job 7: Cleanup old webhooks (daily at 3:00 AM UTC)
     let cleanup_pool = pool.clone();
-    scheduler.add(
-        Job::new_async("0 0 3 * * *", move |_uuid, _l| {
+    scheduler
+        .add(Job::new_async("0 0 3 * * *", move |_uuid, _l| {
             let pool = cleanup_pool.clone();
             Box::pin(async move {
                 info!("Running webhook queue cleanup");
                 webhook_processor::cleanup_old_webhooks(&pool, 7).await; // Keep 7 days
             })
-        })?
-    ).await?;
+        })?)
+        .await?;
     info!("Scheduled: Webhook queue cleanup (daily at 3:00 AM)");
 
     // Job 8: Clean up old test history based on subscription tier (daily at 4:00 AM UTC)
     // Implements tier-based retention: Free=7d, Starter=30d, Pro=90d, Team/Enterprise=365d
     let test_cleanup_pool = pool.clone();
-    scheduler.add(
-        Job::new_async("0 0 4 * * *", move |_uuid, _l| {
+    scheduler
+        .add(Job::new_async("0 0 4 * * *", move |_uuid, _l| {
             let pool = test_cleanup_pool.clone();
             Box::pin(async move {
                 info!("Running test history cleanup job");
 
                 // Delete old test history based on each org's subscription tier
                 // NOTE: subscription_tier is on organizations table, NOT subscriptions
-                let result = sqlx::query(r#"
+                let result = sqlx::query(
+                    r#"
                     DELETE FROM mcp_test_history th
                     USING organizations o
                     WHERE th.org_id = o.id
@@ -416,7 +421,8 @@ async fn main() -> anyhow::Result<()> {
                         WHEN 'pro' THEN INTERVAL '90 days'
                         ELSE INTERVAL '365 days'
                     END
-                "#)
+                "#,
+                )
                 .execute(&pool)
                 .await;
 
@@ -425,28 +431,30 @@ async fn main() -> anyhow::Result<()> {
                     Err(e) => error!(error = %e, "Test history cleanup failed"),
                 }
             })
-        })?
-    ).await?;
+        })?)
+        .await?;
     info!("Scheduled: Test history cleanup (daily at 4:00 AM UTC)");
 
     // Job 9: Scheduled MCP health checks (every 30 minutes)
     // Proactively checks MCPs that haven't been tested recently
     let health_check_pool = pool.clone();
-    scheduler.add(
-        Job::new_async("0 */30 * * * *", move |_uuid, _l| {
+    scheduler
+        .add(Job::new_async("0 */30 * * * *", move |_uuid, _l| {
             let pool = health_check_pool.clone();
             Box::pin(async move {
                 info!("Running scheduled MCP health checks");
 
                 // Get MCPs that haven't been checked in 30+ minutes
-                let stale_mcps: Vec<(Uuid, String)> = sqlx::query_as(r#"
+                let stale_mcps: Vec<(Uuid, String)> = sqlx::query_as(
+                    r#"
                     SELECT m.id, m.name
                     FROM mcp_instances m
                     WHERE m.status = 'active'
                     AND (m.last_health_check_at IS NULL
                          OR m.last_health_check_at < NOW() - INTERVAL '30 minutes')
                     LIMIT 100
-                "#)
+                "#,
+                )
                 .fetch_all(&pool)
                 .await
                 .unwrap_or_default();
@@ -460,25 +468,31 @@ async fn main() -> anyhow::Result<()> {
                     // Full health checks are done by the API when users visit the testing page
                     for (mcp_id, _name) in &stale_mcps {
                         let _ = sqlx::query(
-                            "UPDATE mcp_instances SET last_health_check_at = NOW() WHERE id = $1"
+                            "UPDATE mcp_instances SET last_health_check_at = NOW() WHERE id = $1",
                         )
                         .bind(mcp_id)
                         .execute(&pool)
                         .await;
                     }
 
-                    info!(updated = count, "Updated last_health_check_at for stale MCPs");
+                    info!(
+                        updated = count,
+                        "Updated last_health_check_at for stale MCPs"
+                    );
                 }
             })
-        })?
-    ).await?;
+        })?)
+        .await?;
     info!("Scheduled: MCP health check monitoring (every 30 minutes)");
 
     // Start the scheduler
     info!("Starting job scheduler");
     scheduler.start().await?;
 
-    info!("PlexMCP Worker started successfully with {} scheduled jobs", 9);
+    info!(
+        "PlexMCP Worker started successfully with {} scheduled jobs",
+        9
+    );
 
     // Keep the main task running
     // The scheduler runs jobs in background tasks

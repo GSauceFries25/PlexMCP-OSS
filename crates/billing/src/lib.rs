@@ -41,8 +41,8 @@ mod edge_case_tests;
 
 // Add-ons
 pub use addons::{
-    AddonCategory, AddonInfo, AddonQuantities, AddonService, AddonType,
-    AddonsListResponse, EnableAddonRequest, SubscriptionAddon,
+    AddonCategory, AddonInfo, AddonQuantities, AddonService, AddonType, AddonsListResponse,
+    EnableAddonRequest, SubscriptionAddon,
 };
 
 // Checkout
@@ -61,18 +61,18 @@ pub use email::{BillingEmailService, EmailConfig};
 pub use error::{BillingError, BillingResult};
 
 // Metered
-pub use metered::{MeteredBillingService, MeteredSubscription, UsageReportResult, UsageReportResponse};
+pub use metered::{
+    MeteredBillingService, MeteredSubscription, UsageReportResponse, UsageReportResult,
+};
 
 // Instant Charge
 pub use instant_charge::{
-    InstantCharge, InstantChargeResult, InstantChargeService,
-    INSTANT_CHARGE_THRESHOLD_CENTS,
+    InstantCharge, InstantChargeResult, InstantChargeService, INSTANT_CHARGE_THRESHOLD_CENTS,
 };
 
 // Overage
 pub use overage::{
-    AccumulatedOverage, OverageCharge, OverageRates, OverageService, OverageSummary,
-    PayNowResult,
+    AccumulatedOverage, OverageCharge, OverageRates, OverageService, OverageSummary, PayNowResult,
 };
 
 // Spend Cap
@@ -88,20 +88,20 @@ pub use portal::{PortalResponse, PortalService};
 pub use rate_limit::{RateLimitConfig, RateLimitResult, RateLimiter};
 
 // Refund
-pub use refund::{AdminRefund, RefundableCharge, RefundResult, RefundService};
+pub use refund::{AdminRefund, RefundResult, RefundService, RefundableCharge};
 
 // Subscriptions
 pub use subscriptions::{
     AdminTierChangeParams, AdminTierChangeResult, CancelledSubscriptionInfo, Plan,
-    ProrationPreview, ReactivationResult, ScheduledDowngrade, SubscriptionService,
-    SubscriptionPauseResult, SubscriptionPauseStatus, SubscriptionResumeResult,
+    ProrationPreview, ReactivationResult, ScheduledDowngrade, SubscriptionPauseResult,
+    SubscriptionPauseStatus, SubscriptionResumeResult, SubscriptionService,
 };
 
 // Usage
 pub use usage::{BillingPeriodUsage, UsageEvent, UsageMeter, UsageSummary};
 
 // Webhooks
-pub use webhooks::{WebhookHandler, WebhookEventRecord, WebhookReplayResult};
+pub use webhooks::{WebhookEventRecord, WebhookHandler, WebhookReplayResult};
 
 // History
 pub use history::{BillingHistoryRecord, BillingHistoryService, BillingSummary};
@@ -117,7 +117,7 @@ pub use entitlement::{
 
 // Invariants
 pub use invariants::{
-    InvariantChecker, InvariantCheckSummary, InvariantViolation, ViolationSeverity,
+    InvariantCheckSummary, InvariantChecker, InvariantViolation, ViolationSeverity,
 };
 
 // Events
@@ -127,8 +127,8 @@ pub use events::{
 
 // Member Suspension
 pub use member_suspension::{
-    AffectedMembersInfo, MemberStatusSummary, MemberSuspensionService,
-    MemberToSuspend, SuspensionResult,
+    AffectedMembersInfo, MemberStatusSummary, MemberSuspensionService, MemberToSuspend,
+    SuspensionResult,
 };
 
 use sqlx::PgPool;
@@ -163,7 +163,11 @@ impl BillingService {
             checkout: CheckoutService::new(stripe.clone(), pool.clone()),
             customer: CustomerService::new(stripe.clone(), pool.clone()),
             email: email_service.clone(),
-            instant_charge: InstantChargeService::new(stripe.clone(), pool.clone(), email_service.clone()),
+            instant_charge: InstantChargeService::new(
+                stripe.clone(),
+                pool.clone(),
+                email_service.clone(),
+            ),
             member_suspension: MemberSuspensionService::new(pool.clone()),
             metered: MeteredBillingService::new(stripe.clone(), pool.clone()),
             overage: OverageService::new(stripe.clone(), pool.clone()),
@@ -187,7 +191,11 @@ impl BillingService {
             checkout: CheckoutService::new(stripe.clone(), pool.clone()),
             customer: CustomerService::new(stripe.clone(), pool.clone()),
             email: email_service.clone(),
-            instant_charge: InstantChargeService::new(stripe.clone(), pool.clone(), email_service.clone()),
+            instant_charge: InstantChargeService::new(
+                stripe.clone(),
+                pool.clone(),
+                email_service.clone(),
+            ),
             member_suspension: MemberSuspensionService::new(pool.clone()),
             metered: MeteredBillingService::new(stripe.clone(), pool.clone()),
             overage: OverageService::new(stripe.clone(), pool.clone()),

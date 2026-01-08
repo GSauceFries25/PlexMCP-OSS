@@ -115,7 +115,9 @@ pub async fn oauth_initiated(
     });
 
     // Use provided email or placeholder (email not always known at initiation)
-    let email = payload.email.unwrap_or_else(|| format!("oauth_init@{}.pending", payload.provider));
+    let email = payload
+        .email
+        .unwrap_or_else(|| format!("oauth_init@{}.pending", payload.provider));
 
     sqlx::query(
         r#"
@@ -300,10 +302,7 @@ pub async fn oauth_session_created(
 
     Ok(Json(AuditLogResponse {
         success: true,
-        message: format!(
-            "OAuth session creation logged for email: {}",
-            payload.email
-        ),
+        message: format!("OAuth session creation logged for email: {}", payload.email),
     }))
 }
 
@@ -359,7 +358,7 @@ pub async fn session_event(
 
     // Map event names to standard event types
     let (event_type, severity_level) = match payload.event_name.as_str() {
-        "logout" => (auth_event::LOGOUT, severity::INFO),  // FIXED: Use LOGOUT not LOGOUT_SUCCESS
+        "logout" => (auth_event::LOGOUT, severity::INFO), // FIXED: Use LOGOUT not LOGOUT_SUCCESS
         "token_refreshed" => (auth_event::TOKEN_REFRESHED, severity::INFO),
         "session_expired" => (auth_event::SESSION_EXPIRED, severity::WARNING),
         "signed_in" => (auth_event::SESSION_ESTABLISHED, severity::INFO),

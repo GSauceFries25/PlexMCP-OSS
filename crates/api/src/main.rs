@@ -21,16 +21,16 @@ use std::net::SocketAddr;
 
 use axum::http::{header, Method};
 use axum::middleware;
-use plexmcp_shared::{create_pool, create_migration_pool};
+use plexmcp_shared::{create_migration_pool, create_pool};
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
     trace::TraceLayer,
 };
 
 use crate::security::security_headers_middleware;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use tokio::time::{interval, Duration};
 use time::OffsetDateTime;
+use tokio::time::{interval, Duration};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{config::Config, routes::create_router, state::AppState};
 
@@ -64,18 +64,19 @@ async fn main() -> anyhow::Result<()> {
 
     // DATABASE FINGERPRINT AT STARTUP - Verify which database we connected to
     tracing::info!("Fetching database fingerprint...");
-    let db_fingerprint: Result<(String, String, String, String, i32, i32), sqlx::Error> = sqlx::query_as(
-        r#"SELECT
+    let db_fingerprint: Result<(String, String, String, String, i32, i32), sqlx::Error> =
+        sqlx::query_as(
+            r#"SELECT
             current_database()::TEXT,
             current_schema()::TEXT,
             current_setting('search_path')::TEXT,
             inet_server_addr()::TEXT,
             inet_server_port(),
             (SELECT COUNT(*)::INT FROM public.users) as user_count
-        "#
-    )
-    .fetch_one(&pool)
-    .await;
+        "#,
+        )
+        .fetch_one(&pool)
+        .await;
 
     match db_fingerprint {
         Ok((db_name, schema, search_path, server_ip, server_port, user_count)) => {
@@ -107,8 +108,9 @@ async fn main() -> anyhow::Result<()> {
 
     // V436: Query and log ALL RLS policies on staff_email_assignments table
     tracing::info!("Querying RLS policies on staff_email_assignments table...");
-    let rls_policies: Result<Vec<(String, String, Option<String>, Option<String>)>, sqlx::Error> = sqlx::query_as(
-        r#"SELECT
+    let rls_policies: Result<Vec<(String, String, Option<String>, Option<String>)>, sqlx::Error> =
+        sqlx::query_as(
+            r#"SELECT
             polname::TEXT,
             CASE polcmd
                 WHEN 'r' THEN 'SELECT'
@@ -122,10 +124,10 @@ async fn main() -> anyhow::Result<()> {
             pg_get_expr(polwithcheck, polrelid) as with_check_clause
         FROM pg_policy
         WHERE polrelid = 'staff_email_assignments'::regclass
-        ORDER BY polname"#
-    )
-    .fetch_all(&pool)
-    .await;
+        ORDER BY polname"#,
+        )
+        .fetch_all(&pool)
+        .await;
 
     match rls_policies {
         Ok(policies) => {
@@ -186,7 +188,9 @@ async fn main() -> anyhow::Result<()> {
             tokio::spawn(async move {
                 // Run immediately on startup to populate recent data
                 match usage_meter.aggregate_all_recent().await {
-                    Ok(count) => tracing::info!(count = count, "Initial usage aggregation complete"),
+                    Ok(count) => {
+                        tracing::info!(count = count, "Initial usage aggregation complete")
+                    }
                     Err(e) => tracing::error!(error = ?e, "Initial usage aggregation failed"),
                 }
 
@@ -214,9 +218,7 @@ async fn main() -> anyhow::Result<()> {
     // SOC 2 CC6.1: Explicit origin allowlist prevents cross-origin attacks
     // Default to localhost for development/self-hosted; production should set ALLOWED_ORIGINS
     let allowed_origins: Vec<axum::http::HeaderValue> = std::env::var("ALLOWED_ORIGINS")
-        .unwrap_or_else(|_| {
-            "http://localhost:3000,http://127.0.0.1:3000".to_string()
-        })
+        .unwrap_or_else(|_| "http://localhost:3000,http://127.0.0.1:3000".to_string())
         .split(',')
         .filter_map(|s| s.trim().parse().ok())
         .collect();
@@ -278,7 +280,7 @@ async fn geoip_update_task(state: AppState) {
 
         // Update if 7+ days since last update
         let should_update = match last_update {
-            None => true,  // First run
+            None => true, // First run
             Some(last) => (now - last).whole_days() >= 7,
         };
 
@@ -302,10 +304,10 @@ async fn geoip_update_task(state: AppState) {
 
 /// Download and replace GeoIP database file
 async fn update_geoip_database(license_key: &str) -> anyhow::Result<()> {
-    use tokio::fs;
     use flate2::read::GzDecoder;
-    use tar::Archive;
     use std::io::Read;
+    use tar::Archive;
+    use tokio::fs;
 
     if license_key.is_empty() {
         anyhow::bail!("MAXMIND_LICENSE_KEY not set");
@@ -326,7 +328,10 @@ async fn update_geoip_database(license_key: &str) -> anyhow::Result<()> {
     let response = client.get(&download_url).send().await?.error_for_status()?;
     let bytes = response.bytes().await?;
 
-    tracing::info!(size_mb = bytes.len() / 1024 / 1024, "Download complete, extracting...");
+    tracing::info!(
+        size_mb = bytes.len() / 1024 / 1024,
+        "Download complete, extracting..."
+    );
 
     // Extract tar.gz in blocking task (tar operations are synchronous)
     let contents = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
@@ -343,7 +348,8 @@ async fn update_geoip_database(license_key: &str) -> anyhow::Result<()> {
             }
         }
         anyhow::bail!("No .mmdb file found in downloaded archive")
-    }).await??;
+    })
+    .await??;
 
     // Write to temp file
     fs::write(temp_path, &contents).await?;

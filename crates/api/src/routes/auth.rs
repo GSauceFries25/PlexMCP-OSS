@@ -12,13 +12,16 @@ use uuid::Uuid;
 
 use crate::{
     audit_constants::{auth_event, event_type, severity},
-    auth::{generate_impossible_hash, hash_password, sessions, totp, validate_password_strength, verify_password, AuthUser, TokenManager, VerificationTokenType},
+    auth::{
+        generate_impossible_hash, hash_password, sessions, totp, validate_password_strength,
+        verify_password, AuthUser, TokenManager, VerificationTokenType,
+    },
     error::{ApiError, ApiResult},
     state::AppState,
 };
 
-use super::two_factor::{is_device_trusted, trust_device};
 use super::extract_client_ip;
+use super::two_factor::{is_device_trusted, trust_device};
 use axum::http::HeaderMap;
 
 // =============================================================================
@@ -233,7 +236,7 @@ pub async fn log_auth_event(
             ip_address, user_agent, provider, auth_method
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(event_name)
@@ -263,7 +266,10 @@ pub async fn log_auth_event(
                 email = %email_str,
                 "log_auth_event: INSERT FAILED - CRITICAL COMPLIANCE VIOLATION"
             );
-            Err(ApiError::Database(format!("Auth audit logging failed: {}", e)))
+            Err(ApiError::Database(format!(
+                "Auth audit logging failed: {}",
+                e
+            )))
         }
     }
 }
@@ -300,9 +306,7 @@ pub fn sanitize_auth_pii(mut details: serde_json::Value) -> serde_json::Value {
 }
 
 /// Extract audit context from headers
-pub fn extract_auth_audit_context(
-    headers: &HeaderMap,
-) -> (Option<String>, Option<String>) {
+pub fn extract_auth_audit_context(headers: &HeaderMap) -> (Option<String>, Option<String>) {
     let ip_address = extract_client_ip(headers);
     let user_agent = headers
         .get("user-agent")
@@ -331,9 +335,10 @@ pub async fn register(
             Ok(result) if !result.allowed => {
                 tracing::warn!(ip = %ip, "register: Rate limit exceeded for IP");
                 let retry_after = result.retry_after_seconds.unwrap_or(60);
-                return Err(ApiError::TooManyRequests(
-                    format!("Too many registration attempts. Please try again in {} seconds.", retry_after)
-                ));
+                return Err(ApiError::TooManyRequests(format!(
+                    "Too many registration attempts. Please try again in {} seconds.",
+                    retry_after
+                )));
             }
             Err(e) => {
                 tracing::error!(error = ?e, "register: Rate limit check failed, allowing request");
@@ -344,7 +349,9 @@ pub async fn register(
 
     // Check if signup is enabled
     if !state.config.enable_signup {
-        return Err(ApiError::BadRequest("Registration is currently disabled".to_string()));
+        return Err(ApiError::BadRequest(
+            "Registration is currently disabled".to_string(),
+        ));
     }
 
     // Validate email format
@@ -353,29 +360,28 @@ pub async fn register(
     }
 
     // Validate password strength
-    validate_password_strength(&req.password)
-        .map_err(|e| ApiError::Validation(e.to_string()))?;
+    validate_password_strength(&req.password).map_err(|e| ApiError::Validation(e.to_string()))?;
 
     // Validate org name
     if req.org_name.trim().is_empty() || req.org_name.len() > 100 {
-        return Err(ApiError::Validation("Organization name must be between 1 and 100 characters".to_string()));
+        return Err(ApiError::Validation(
+            "Organization name must be between 1 and 100 characters".to_string(),
+        ));
     }
 
     // Check if email already exists
-    let exists: Option<(bool,)> = sqlx::query_as(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)"
-    )
-    .bind(req.email.to_lowercase())
-    .fetch_optional(&state.pool)
-    .await?;
+    let exists: Option<(bool,)> =
+        sqlx::query_as("SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)")
+            .bind(req.email.to_lowercase())
+            .fetch_optional(&state.pool)
+            .await?;
 
     if exists.map(|r| r.0).unwrap_or(false) {
         return Err(ApiError::EmailAlreadyExists);
     }
 
     // Hash password
-    let password_hash = hash_password(&req.password)
-        .map_err(|_| ApiError::Internal)?;
+    let password_hash = hash_password(&req.password).map_err(|_| ApiError::Internal)?;
 
     // Generate slug from org name
     let slug = generate_slug(&req.org_name);
@@ -389,7 +395,7 @@ pub async fn register(
         r#"
         INSERT INTO organizations (id, name, slug, subscription_tier, settings)
         VALUES ($1, $2, $3, 'free', '{}')
-        "#
+        "#,
     )
     .bind(org_id)
     .bind(req.org_name.trim())
@@ -404,7 +410,7 @@ pub async fn register(
         r#"
         INSERT INTO users (id, org_id, email, password_hash, role, email_verified)
         VALUES ($1, $2, $3, $4, 'owner', false)
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(org_id)
@@ -419,7 +425,7 @@ pub async fn register(
         r#"
         INSERT INTO subscriptions (id, org_id, status)
         VALUES ($1, $2, 'active')
-        "#
+        "#,
     )
     .bind(subscription_id)
     .bind(org_id)
@@ -431,7 +437,7 @@ pub async fn register(
         r#"
         INSERT INTO organization_members (id, org_id, user_id, role, created_at, status)
         VALUES ($1, $2, $3, 'owner', NOW(), 'active')
-        "#
+        "#,
     )
     .bind(Uuid::new_v4())
     .bind(org_id)
@@ -448,7 +454,8 @@ pub async fn register(
         .map_err(|_| ApiError::Internal)?;
 
     // Save session for revocation support
-    let access_expires_at = OffsetDateTime::now_utc() + Duration::hours(state.config.jwt_expiry_hours);
+    let access_expires_at =
+        OffsetDateTime::now_utc() + Duration::hours(state.config.jwt_expiry_hours);
     let refresh_expires_at = OffsetDateTime::now_utc() + Duration::days(30);
     sessions::save_session(
         &state.pool,
@@ -459,7 +466,8 @@ pub async fn register(
         refresh_expires_at,
         ip_address.as_deref(),
         user_agent.as_deref(),
-    ).await?;
+    )
+    .await?;
 
     // Generate verification token and send email (fire and forget)
     let token_manager = TokenManager::new(state.pool.clone());
@@ -507,7 +515,8 @@ pub async fn register(
         true,
         Some("email".to_string()),
         Some("password".to_string()),
-    ).await?;
+    )
+    .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -578,9 +587,10 @@ async fn login_inner(
                     "login: Rate limit exceeded for IP"
                 );
                 let retry_after = result.retry_after_seconds.unwrap_or(60);
-                return Err(ApiError::TooManyRequests(
-                    format!("Too many login attempts. Please try again in {} seconds.", retry_after)
-                ));
+                return Err(ApiError::TooManyRequests(format!(
+                    "Too many login attempts. Please try again in {} seconds.",
+                    retry_after
+                )));
             }
             Err(e) => {
                 tracing::error!(error = ?e, "login: Rate limit check failed, allowing request");
@@ -600,7 +610,7 @@ async fn login_inner(
         FROM users u
         JOIN organizations o ON o.id = u.org_id
         WHERE u.email = $1
-        "#
+        "#,
     )
     .bind(&email_lower)
     .fetch_optional(&state.pool)
@@ -628,7 +638,8 @@ async fn login_inner(
                     false,
                     Some("email".to_string()),
                     Some("password".to_string()),
-                ).await;
+                )
+                .await;
             }
         });
 
@@ -644,11 +655,10 @@ async fn login_inner(
     );
 
     // Verify password
-    let valid = verify_password(&req.password, &user.password_hash)
-        .map_err(|e| {
-            tracing::error!(error = ?e, "login: Password verification failed with error");
-            ApiError::Internal
-        })?;
+    let valid = verify_password(&req.password, &user.password_hash).map_err(|e| {
+        tracing::error!(error = ?e, "login: Password verification failed with error");
+        ApiError::Internal
+    })?;
 
     if !valid {
         tracing::warn!(user_id = %user.id, "login: Invalid password");
@@ -667,7 +677,8 @@ async fn login_inner(
             false,
             Some("email".to_string()),
             Some("password".to_string()),
-        ).await?;
+        )
+        .await?;
 
         return Err(ApiError::InvalidCredentials);
     }
@@ -675,19 +686,20 @@ async fn login_inner(
     tracing::info!(user_id = %user.id, "login: Password verified successfully");
 
     // Check if user has 2FA enabled
-    let has_2fa: Option<(bool,)> = sqlx::query_as(
-        "SELECT is_enabled FROM user_2fa WHERE user_id = $1"
-    )
-    .bind(user.id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let has_2fa: Option<(bool,)> =
+        sqlx::query_as("SELECT is_enabled FROM user_2fa WHERE user_id = $1")
+            .bind(user.id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     let two_fa_enabled = has_2fa.map(|r| r.0).unwrap_or(false);
 
     // Check if device is trusted (skip 2FA if so)
     let device_trusted = if two_fa_enabled {
         if let Some(ref device_token) = req.device_token {
-            is_device_trusted(&state.pool, user.id, device_token).await.unwrap_or(false)
+            is_device_trusted(&state.pool, user.id, device_token)
+                .await
+                .unwrap_or(false)
         } else {
             false
         }
@@ -699,7 +711,8 @@ async fn login_inner(
         // Generate temporary login token for 2FA verification
         let temp_token = totp::generate_token();
         let token_hash = totp::hash_token(&temp_token);
-        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(totp::LOGIN_TOKEN_EXPIRY_MINUTES);
+        let expires_at =
+            OffsetDateTime::now_utc() + time::Duration::minutes(totp::LOGIN_TOKEN_EXPIRY_MINUTES);
 
         // Store the temp token (upsert to handle concurrent logins)
         sqlx::query(
@@ -710,7 +723,7 @@ async fn login_inner(
                 token_hash = EXCLUDED.token_hash,
                 expires_at = EXCLUDED.expires_at,
                 created_at = NOW()
-            "#
+            "#,
         )
         .bind(user.id)
         .bind(&token_hash)
@@ -718,11 +731,13 @@ async fn login_inner(
         .execute(&state.pool)
         .await?;
 
-        return Ok(Json(LoginResponse::TwoFactorRequired(TwoFactorRequiredResponse {
-            requires_2fa: true,
-            temp_token,
-            user_id: user.id,
-        })));
+        return Ok(Json(LoginResponse::TwoFactorRequired(
+            TwoFactorRequiredResponse {
+                requires_2fa: true,
+                temp_token,
+                user_id: user.id,
+            },
+        )));
     }
 
     // No 2FA - proceed with normal login
@@ -746,7 +761,8 @@ async fn login_inner(
         })?;
 
     // Save session for revocation support
-    let access_expires_at = OffsetDateTime::now_utc() + Duration::hours(state.config.jwt_expiry_hours);
+    let access_expires_at =
+        OffsetDateTime::now_utc() + Duration::hours(state.config.jwt_expiry_hours);
     let refresh_expires_at = OffsetDateTime::now_utc() + Duration::days(30);
     sessions::save_session(
         &state.pool,
@@ -757,7 +773,8 @@ async fn login_inner(
         refresh_expires_at,
         ip_address.as_deref(),
         user_agent.as_deref(),
-    ).await?;
+    )
+    .await?;
 
     tracing::info!(user_id = %user.id, "login: Login successful");
 
@@ -775,7 +792,8 @@ async fn login_inner(
         true,
         Some("email".to_string()),
         Some("password".to_string()),
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(LoginResponse::Success(AuthResponse {
         access_token,
@@ -816,9 +834,10 @@ pub async fn login_2fa(
                 "login_2fa: Rate limit exceeded for token"
             );
             let retry_after = result.retry_after_seconds.unwrap_or(60);
-            return Err(ApiError::TooManyRequests(
-                format!("Too many 2FA attempts. Please try again in {} seconds.", retry_after)
-            ));
+            return Err(ApiError::TooManyRequests(format!(
+                "Too many 2FA attempts. Please try again in {} seconds.",
+                retry_after
+            )));
         }
         Err(e) => {
             tracing::error!(error = ?e, "login_2fa: Rate limit check failed, allowing request");
@@ -857,7 +876,7 @@ pub async fn login_2fa(
         SELECT user_id, expires_at, email
         FROM user_2fa_login_tokens
         WHERE token_hash = $1
-        "#
+        "#,
     )
     .bind(&token_hash)
     .fetch_optional(&state.pool)
@@ -896,12 +915,14 @@ pub async fn login_2fa(
         SELECT totp_secret_encrypted, totp_secret_nonce, failed_attempts, locked_until
         FROM user_2fa
         WHERE user_id = $1 AND is_enabled = TRUE
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or(ApiError::BadRequest("2FA not enabled for this user".to_string()))?;
+    .ok_or(ApiError::BadRequest(
+        "2FA not enabled for this user".to_string(),
+    ))?;
 
     // Check if locked out
     if let Some(locked_until) = tfa.locked_until {
@@ -949,12 +970,11 @@ pub async fn login_2fa(
         } else {
             // Fallback to Supabase auth.users table (for OAuth users)
             tracing::info!("Trying auth.users fallback for OAuth user");
-            let auth_row: Option<(String,)> = sqlx::query_as(
-                "SELECT email FROM auth.users WHERE id = $1"
-            )
-            .bind(user_id)
-            .fetch_optional(&state.pool)
-            .await?;
+            let auth_row: Option<(String,)> =
+                sqlx::query_as("SELECT email FROM auth.users WHERE id = $1")
+                    .bind(user_id)
+                    .fetch_optional(&state.pool)
+                    .await?;
 
             auth_row.map(|r| r.0).ok_or_else(|| {
                 tracing::error!(user_id = %user_id, "User email not found in any table");
@@ -971,13 +991,15 @@ pub async fn login_2fa(
         "login_2fa: Attempting TOTP verification"
     );
 
-    let code_valid = totp::verify_code(&secret, &req.code, &user_email)
-        .map_err(|e| {
-            tracing::error!(error = ?e, "login_2fa: TOTP verification error");
-            ApiError::Internal
-        })?;
+    let code_valid = totp::verify_code(&secret, &req.code, &user_email).map_err(|e| {
+        tracing::error!(error = ?e, "login_2fa: TOTP verification error");
+        ApiError::Internal
+    })?;
 
-    tracing::info!(code_valid = code_valid, "login_2fa: TOTP verification result");
+    tracing::info!(
+        code_valid = code_valid,
+        "login_2fa: TOTP verification result"
+    );
 
     let verified = if code_valid {
         true
@@ -1013,7 +1035,7 @@ pub async fn login_2fa(
 
             // Count remaining backup codes
             let remaining: (i64,) = sqlx::query_as(
-                "SELECT COUNT(*) FROM user_2fa_backup_codes WHERE user_id = $1 AND used_at IS NULL"
+                "SELECT COUNT(*) FROM user_2fa_backup_codes WHERE user_id = $1 AND used_at IS NULL",
             )
             .bind(user_id)
             .fetch_one(&state.pool)
@@ -1030,7 +1052,9 @@ pub async fn login_2fa(
             let email_to = user_email.clone();
             let codes_remaining = remaining.0;
             tokio::spawn(async move {
-                email_service.send_backup_code_used(&email_to, codes_remaining).await;
+                email_service
+                    .send_backup_code_used(&email_to, codes_remaining)
+                    .await;
             });
 
             true
@@ -1054,19 +1078,20 @@ pub async fn login_2fa(
             false,
             None,
             Some("2fa".to_string()),
-        ).await;
+        )
+        .await;
 
         // Increment failed attempts
         let new_attempts = tfa.failed_attempts + 1;
 
         if new_attempts >= totp::MAX_2FA_ATTEMPTS {
             // Lock the account
-            let lock_until = OffsetDateTime::now_utc()
-                + time::Duration::minutes(totp::LOCKOUT_DURATION_MINUTES);
+            let lock_until =
+                OffsetDateTime::now_utc() + time::Duration::minutes(totp::LOCKOUT_DURATION_MINUTES);
 
             // Try to lock the account, but don't fail if DB update fails
             if let Err(e) = sqlx::query(
-                "UPDATE user_2fa SET failed_attempts = $1, locked_until = $2 WHERE user_id = $3"
+                "UPDATE user_2fa SET failed_attempts = $1, locked_until = $2 WHERE user_id = $3",
             )
             .bind(new_attempts)
             .bind(lock_until)
@@ -1083,11 +1108,12 @@ pub async fn login_2fa(
             )));
         } else {
             // Try to increment failed attempts, but don't fail if DB update fails
-            if let Err(e) = sqlx::query("UPDATE user_2fa SET failed_attempts = $1 WHERE user_id = $2")
-                .bind(new_attempts)
-                .bind(user_id)
-                .execute(&state.pool)
-                .await
+            if let Err(e) =
+                sqlx::query("UPDATE user_2fa SET failed_attempts = $1 WHERE user_id = $2")
+                    .bind(new_attempts)
+                    .bind(user_id)
+                    .execute(&state.pool)
+                    .await
             {
                 tracing::error!(user_id = %user_id, error = ?e, "Failed to update failed attempts count");
             }
@@ -1119,7 +1145,7 @@ pub async fn login_2fa(
         FROM users u
         JOIN organizations o ON o.id = u.org_id
         WHERE u.id = $1
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_optional(&state.pool)
@@ -1134,12 +1160,11 @@ pub async fn login_2fa(
             tracing::info!(user_id = %user_id, "User not in users table, checking auth.users for OAuth user");
 
             // Get email from auth.users
-            let auth_user: Option<(String,)> = sqlx::query_as(
-                "SELECT email FROM auth.users WHERE id = $1"
-            )
-            .bind(user_id)
-            .fetch_optional(&state.pool)
-            .await?;
+            let auth_user: Option<(String,)> =
+                sqlx::query_as("SELECT email FROM auth.users WHERE id = $1")
+                    .bind(user_id)
+                    .fetch_optional(&state.pool)
+                    .await?;
 
             let email = auth_user.map(|r| r.0).ok_or_else(|| {
                 tracing::error!(user_id = %user_id, "OAuth user not found in auth.users");
@@ -1149,19 +1174,22 @@ pub async fn login_2fa(
             tracing::info!(user_id = %user_id, email = %email, "Found OAuth user, checking for existing user record by email");
 
             // First check if a user with this email already exists (may have different id from previous signup)
-            let existing_user_by_email: Option<(Uuid, Uuid, String, String, bool, String)> = sqlx::query_as(
-                r#"
+            let existing_user_by_email: Option<(Uuid, Uuid, String, String, bool, String)> =
+                sqlx::query_as(
+                    r#"
                 SELECT u.id, u.org_id, u.role, o.name as org_name, u.is_admin, u.platform_role::text
                 FROM users u
                 JOIN organizations o ON u.org_id = o.id
                 WHERE u.email = $1
-                "#
-            )
-            .bind(&email)
-            .fetch_optional(&state.pool)
-            .await?;
+                "#,
+                )
+                .bind(&email)
+                .fetch_optional(&state.pool)
+                .await?;
 
-            if let Some((existing_id, existing_org_id, role, org_name, is_admin, platform_role)) = existing_user_by_email {
+            if let Some((existing_id, existing_org_id, role, org_name, is_admin, platform_role)) =
+                existing_user_by_email
+            {
                 tracing::info!(
                     user_id = %user_id,
                     existing_user_id = %existing_id,
@@ -1183,7 +1211,10 @@ pub async fn login_2fa(
                 tracing::info!(user_id = %user_id, email = %email, "No existing user found, creating organization and user record");
 
                 // Create a personal organization for the OAuth user (or get existing one)
-                let org_name = format!("{}'s Organization", email.split('@').next().unwrap_or("User"));
+                let org_name = format!(
+                    "{}'s Organization",
+                    email.split('@').next().unwrap_or("User")
+                );
                 // Generate a unique slug from the user_id (first 8 chars of UUID)
                 let slug = format!("oauth-{}", &user_id.to_string()[..8]);
 
@@ -1194,7 +1225,7 @@ pub async fn login_2fa(
                     VALUES ($1, $2)
                     ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
                     RETURNING id
-                    "#
+                    "#,
                 )
                 .bind(&org_name)
                 .bind(&slug)
@@ -1205,15 +1236,14 @@ pub async fn login_2fa(
 
                 // SOC 2 CC6.1: Generate cryptographically random hash for OAuth users
                 // (they authenticate via Supabase OAuth, not our password system)
-                let impossible_hash = generate_impossible_hash()
-                    .map_err(|_| ApiError::Internal)?;
+                let impossible_hash = generate_impossible_hash().map_err(|_| ApiError::Internal)?;
 
                 // Create the user record
                 sqlx::query(
                     r#"
                     INSERT INTO users (id, org_id, email, password_hash, role)
                     VALUES ($1, $2, $3, $4, 'admin')
-                    "#
+                    "#,
                 )
                 .bind(user_id)
                 .bind(org_id.0)
@@ -1250,7 +1280,8 @@ pub async fn login_2fa(
         .map_err(|_| ApiError::Internal)?;
 
     // Save session for revocation support
-    let access_expires_at = OffsetDateTime::now_utc() + Duration::hours(state.config.jwt_expiry_hours);
+    let access_expires_at =
+        OffsetDateTime::now_utc() + Duration::hours(state.config.jwt_expiry_hours);
     let refresh_expires_at = OffsetDateTime::now_utc() + Duration::days(30);
     sessions::save_session(
         &state.pool,
@@ -1261,7 +1292,8 @@ pub async fn login_2fa(
         refresh_expires_at,
         ip_address.as_deref(),
         user_agent.as_deref(),
-    ).await?;
+    )
+    .await?;
 
     // Log successful 2FA verification
     log_auth_event(
@@ -1277,13 +1309,12 @@ pub async fn login_2fa(
         true,
         None,
         Some("2fa".to_string()),
-    ).await?;
+    )
+    .await?;
 
     // Create device trust token if requested
     let device_token = if req.remember_device {
-        let user_agent = headers
-            .get("user-agent")
-            .and_then(|h| h.to_str().ok());
+        let user_agent = headers.get("user-agent").and_then(|h| h.to_str().ok());
         let client_ip = extract_client_ip(&headers);
 
         match trust_device(&state.pool, user_id, user_agent, client_ip.as_deref()).await {
@@ -1339,7 +1370,7 @@ pub async fn refresh(
         FROM users u
         JOIN organizations o ON o.id = u.org_id
         WHERE u.id = $1
-        "#
+        "#,
     )
     .bind(claims.sub)
     .fetch_optional(&state.pool)
@@ -1353,7 +1384,8 @@ pub async fn refresh(
         .map_err(|_| ApiError::Internal)?;
 
     // Save session for revocation support
-    let access_expires_at = OffsetDateTime::now_utc() + Duration::hours(state.config.jwt_expiry_hours);
+    let access_expires_at =
+        OffsetDateTime::now_utc() + Duration::hours(state.config.jwt_expiry_hours);
     let refresh_expires_at = OffsetDateTime::now_utc() + Duration::days(30);
     sessions::save_session(
         &state.pool,
@@ -1364,7 +1396,8 @@ pub async fn refresh(
         refresh_expires_at,
         ip_address.as_deref(),
         user_agent.as_deref(),
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(AuthResponse {
         access_token,
@@ -1409,9 +1442,10 @@ pub async fn forgot_password(
                     tokio::time::sleep(min_response_time - elapsed).await;
                 }
                 let retry_after = result.retry_after_seconds.unwrap_or(60);
-                return Err(ApiError::TooManyRequests(
-                    format!("Too many password reset requests. Please try again in {} seconds.", retry_after)
-                ));
+                return Err(ApiError::TooManyRequests(format!(
+                    "Too many password reset requests. Please try again in {} seconds.",
+                    retry_after
+                )));
             }
             Err(e) => {
                 tracing::error!(error = ?e, "forgot_password: Rate limit check failed, allowing request");
@@ -1421,12 +1455,11 @@ pub async fn forgot_password(
     }
 
     // Always return success to prevent email enumeration
-    let result: Option<UserEmailRow> = sqlx::query_as(
-        "SELECT id, email FROM users WHERE email = $1"
-    )
-    .bind(req.email.to_lowercase())
-    .fetch_optional(&state.pool)
-    .await?;
+    let result: Option<UserEmailRow> =
+        sqlx::query_as("SELECT id, email FROM users WHERE email = $1")
+            .bind(req.email.to_lowercase())
+            .fetch_optional(&state.pool)
+            .await?;
 
     if let Some(user) = result {
         // Log password reset request
@@ -1443,7 +1476,8 @@ pub async fn forgot_password(
             true,
             Some("email".to_string()),
             Some("password".to_string()),
-        ).await?;
+        )
+        .await?;
 
         // Generate reset token and send email (fire and forget)
         let token_manager = TokenManager::new(state.pool.clone());
@@ -1461,7 +1495,9 @@ pub async fn forgot_password(
                 .await
             {
                 Ok(reset_token) => {
-                    email_service.send_password_reset(&user_email, &reset_token).await;
+                    email_service
+                        .send_password_reset(&user_email, &reset_token)
+                        .await;
                     tracing::info!(user_id = %user_id, "Password reset email sent");
                 }
                 Err(e) => {
@@ -1483,7 +1519,8 @@ pub async fn forgot_password(
     }
 
     Ok(Json(MessageResponse {
-        message: "If an account exists with that email, a password reset link has been sent.".to_string(),
+        message: "If an account exists with that email, a password reset link has been sent."
+            .to_string(),
     }))
 }
 
@@ -1497,8 +1534,7 @@ pub async fn reset_password(
     let (ip_address, user_agent) = extract_auth_audit_context(&headers);
 
     // Validate password strength
-    validate_password_strength(&req.password)
-        .map_err(|e| ApiError::Validation(e.to_string()))?;
+    validate_password_strength(&req.password).map_err(|e| ApiError::Validation(e.to_string()))?;
 
     // Validate and consume password reset token
     let token_manager = TokenManager::new(state.pool.clone());
@@ -1517,8 +1553,7 @@ pub async fn reset_password(
         .await?;
 
     // Hash new password
-    let password_hash = hash_password(&req.password)
-        .map_err(|_| ApiError::Internal)?;
+    let password_hash = hash_password(&req.password).map_err(|_| ApiError::Internal)?;
 
     // Update password
     sqlx::query(
@@ -1526,7 +1561,7 @@ pub async fn reset_password(
         UPDATE users
         SET password_hash = $1
         WHERE id = $2
-        "#
+        "#,
     )
     .bind(&password_hash)
     .bind(user_id)
@@ -1552,7 +1587,8 @@ pub async fn reset_password(
         true,
         Some("email".to_string()),
         Some("password".to_string()),
-    ).await?;
+    )
+    .await?;
 
     // Send password changed notification (fire and forget)
     let email_service = state.security_email.clone();
@@ -1580,17 +1616,12 @@ pub enum Check2FAResponse {
     Ok,
     /// 2FA verification required
     #[serde(rename = "2fa_required")]
-    TwoFactorRequired {
-        temp_token: String,
-        user_id: Uuid,
-    },
+    TwoFactorRequired { temp_token: String, user_id: Uuid },
     /// 2FA already pending - reserved for potential future use
     /// Currently we always generate new tokens, but frontend handles this case as fallback
     #[allow(dead_code)]
     #[serde(rename = "2fa_pending")]
-    TwoFactorPending {
-        user_id: Uuid,
-    },
+    TwoFactorPending { user_id: Uuid },
 }
 
 /// Check if 2FA is required for an OAuth-authenticated user
@@ -1648,14 +1679,14 @@ pub async fn check_2fa_required(
         ApiError::Internal
     })?;
 
-    let oauth_user_id = Uuid::parse_str(&supabase_user.id)
-        .map_err(|_| ApiError::Internal)?;
+    let oauth_user_id = Uuid::parse_str(&supabase_user.id).map_err(|_| ApiError::Internal)?;
     let user_email = supabase_user.email.clone();
 
     // Resolve the OAuth user ID to the actual user ID in our users table
     // This is necessary because OAuth users may have a different ID in our system
     // (e.g., when there's an existing user with the same org+email)
-    let resolved_user_id = resolve_oauth_user_id(&state.pool, oauth_user_id, user_email.as_deref()).await
+    let resolved_user_id = resolve_oauth_user_id(&state.pool, oauth_user_id, user_email.as_deref())
+        .await
         .unwrap_or(oauth_user_id);
 
     tracing::info!(
@@ -1666,12 +1697,11 @@ pub async fn check_2fa_required(
     );
 
     // Check if user has 2FA enabled using the resolved user ID
-    let has_2fa: Option<(bool,)> = sqlx::query_as(
-        "SELECT is_enabled FROM user_2fa WHERE user_id = $1"
-    )
-    .bind(resolved_user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let has_2fa: Option<(bool,)> =
+        sqlx::query_as("SELECT is_enabled FROM user_2fa WHERE user_id = $1")
+            .bind(resolved_user_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
     let two_fa_enabled = has_2fa.map(|r| r.0).unwrap_or(false);
 
@@ -1680,7 +1710,8 @@ pub async fn check_2fa_required(
         // The upsert below handles concurrent requests gracefully
         let temp_token = totp::generate_token();
         let token_hash = totp::hash_token(&temp_token);
-        let expires_at = OffsetDateTime::now_utc() + time::Duration::minutes(totp::LOGIN_TOKEN_EXPIRY_MINUTES);
+        let expires_at =
+            OffsetDateTime::now_utc() + time::Duration::minutes(totp::LOGIN_TOKEN_EXPIRY_MINUTES);
 
         // Store the temp token with email (upsert to handle concurrent logins)
         tracing::info!(
@@ -1700,7 +1731,7 @@ pub async fn check_2fa_required(
                 email = EXCLUDED.email,
                 created_at = NOW()
             RETURNING id
-            "#
+            "#,
         )
         .bind(resolved_user_id)
         .bind(&token_hash)
@@ -1766,12 +1797,11 @@ pub async fn change_password(
         .map_err(|e| ApiError::Validation(e.to_string()))?;
 
     // Get current password hash and email
-    let user: PasswordEmailRow = sqlx::query_as(
-        "SELECT password_hash, email FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let user: PasswordEmailRow =
+        sqlx::query_as("SELECT password_hash, email FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&state.pool)
+            .await?;
 
     // Verify current password
     let valid = verify_password(&req.current_password, &user.password_hash)
@@ -1782,8 +1812,7 @@ pub async fn change_password(
     }
 
     // Hash new password
-    let password_hash = hash_password(&req.new_password)
-        .map_err(|_| ApiError::Internal)?;
+    let password_hash = hash_password(&req.new_password).map_err(|_| ApiError::Internal)?;
 
     // Update password
     sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
@@ -1794,11 +1823,8 @@ pub async fn change_password(
 
     // Revoke all existing sessions to force re-authentication
     // This ensures compromised tokens can't be used after password change
-    let revoked_count = sessions::revoke_all_sessions(
-        &state.pool,
-        user_id,
-        "password_changed"
-    ).await?;
+    let revoked_count =
+        sessions::revoke_all_sessions(&state.pool, user_id, "password_changed").await?;
 
     tracing::info!(
         user_id = %user_id,
@@ -1814,7 +1840,7 @@ pub async fn change_password(
         r#"
         INSERT INTO user_identity_audit (user_id, action, ip_address, user_agent)
         VALUES ($1, 'password_changed', $2, $3)
-        "#
+        "#,
     )
     .bind(user_id)
     .bind(client_ip.as_deref())
@@ -1836,13 +1862,16 @@ pub async fn change_password(
         true,
         None,
         Some("password".to_string()),
-    ).await?;
+    )
+    .await?;
 
     // Send email notification (fire and forget)
     let email_service = state.security_email.clone();
     let email_to = user.email;
     tokio::spawn(async move {
-        email_service.send_password_changed(&email_to, client_ip.as_deref()).await;
+        email_service
+            .send_password_changed(&email_to, client_ip.as_deref())
+            .await;
     });
 
     Ok(Json(MessageResponse {
@@ -1864,7 +1893,7 @@ pub async fn me(
         FROM users u
         JOIN organizations o ON o.id = u.org_id
         WHERE u.id = $1
-        "#
+        "#,
     )
     .bind(user_id)
     .fetch_one(&state.pool)
@@ -1895,12 +1924,10 @@ pub async fn logout(
     let (ip_address, user_agent) = extract_auth_audit_context(&headers);
 
     // Get user email for audit log
-    let email: Option<String> = sqlx::query_scalar(
-        "SELECT email FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let email: Option<String> = sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await?;
 
     // Log logout event
     log_auth_event(
@@ -1916,7 +1943,8 @@ pub async fn logout(
         true,
         None,
         Some("session".to_string()),
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(MessageResponse {
         message: "Logged out successfully".to_string(),
@@ -1970,7 +1998,10 @@ fn is_valid_email(email: &str) -> bool {
         return false;
     }
     // Allow alphanumeric, dots, hyphens, underscores, plus signs
-    if !local.chars().all(|c| c.is_alphanumeric() || ".+-_".contains(c)) {
+    if !local
+        .chars()
+        .all(|c| c.is_alphanumeric() || ".+-_".contains(c))
+    {
         return false;
     }
 
@@ -1999,7 +2030,10 @@ fn is_valid_email(email: &str) -> bool {
     }
 
     // Domain characters: alphanumeric, dots, hyphens only
-    if !domain.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-') {
+    if !domain
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '.' || c == '-')
+    {
         return false;
     }
 
@@ -2010,13 +2044,7 @@ fn generate_slug(name: &str) -> String {
     let slug: String = name
         .to_lowercase()
         .chars()
-        .map(|c| {
-            if c.is_alphanumeric() {
-                c
-            } else {
-                '-'
-            }
-        })
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
         .collect();
 
     // Remove consecutive dashes and trim
@@ -2058,13 +2086,11 @@ async fn resolve_oauth_user_id(
     email: Option<&str>,
 ) -> Option<Uuid> {
     // First check if the OAuth user ID directly exists in users table
-    let direct_user: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM users WHERE id = $1"
-    )
-    .bind(oauth_user_id)
-    .fetch_optional(pool)
-    .await
-    .ok()?;
+    let direct_user: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE id = $1")
+        .bind(oauth_user_id)
+        .fetch_optional(pool)
+        .await
+        .ok()?;
 
     if direct_user.is_some() {
         // OAuth user ID directly exists in users table
@@ -2074,24 +2100,22 @@ async fn resolve_oauth_user_id(
     // Check if there's an org membership for this OAuth user
     // If so, look up if there's a user with the same org+email
     if let Some(email) = email {
-        let org_membership: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT org_id FROM organization_members WHERE user_id = $1 LIMIT 1"
-        )
-        .bind(oauth_user_id)
-        .fetch_optional(pool)
-        .await
-        .ok()?;
+        let org_membership: Option<(Uuid,)> =
+            sqlx::query_as("SELECT org_id FROM organization_members WHERE user_id = $1 LIMIT 1")
+                .bind(oauth_user_id)
+                .fetch_optional(pool)
+                .await
+                .ok()?;
 
         if let Some((org_id,)) = org_membership {
             // Look for a user with the same org+email
-            let existing_user: Option<(Uuid,)> = sqlx::query_as(
-                "SELECT id FROM users WHERE org_id = $1 AND email = $2"
-            )
-            .bind(org_id)
-            .bind(email)
-            .fetch_optional(pool)
-            .await
-            .ok()?;
+            let existing_user: Option<(Uuid,)> =
+                sqlx::query_as("SELECT id FROM users WHERE org_id = $1 AND email = $2")
+                    .bind(org_id)
+                    .bind(email)
+                    .fetch_optional(pool)
+                    .await
+                    .ok()?;
 
             if let Some((user_id,)) = existing_user {
                 tracing::debug!(
@@ -2106,13 +2130,11 @@ async fn resolve_oauth_user_id(
         }
 
         // Direct email lookup as final fallback
-        let email_user: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM users WHERE email = $1"
-        )
-        .bind(email)
-        .fetch_optional(pool)
-        .await
-        .ok()?;
+        let email_user: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM users WHERE email = $1")
+            .bind(email)
+            .fetch_optional(pool)
+            .await
+            .ok()?;
 
         if let Some((user_id,)) = email_user {
             tracing::info!(
@@ -2189,7 +2211,7 @@ pub async fn oauth_init(
     // Store state token with code_verifier for validation during exchange
     sqlx::query(
         "INSERT INTO oauth_state_tokens (state_token, code_verifier, redirect_url)
-         VALUES ($1, $2, $3)"
+         VALUES ($1, $2, $3)",
     )
     .bind(&state_token)
     .bind(&req.code_verifier)
@@ -2270,7 +2292,7 @@ pub async fn oauth_exchange(
         // Look up the state token
         let state_record: Option<(String, Option<time::OffsetDateTime>)> = sqlx::query_as(
             "SELECT code_verifier, used_at FROM oauth_state_tokens
-             WHERE state_token = $1 AND expires_at > NOW()"
+             WHERE state_token = $1 AND expires_at > NOW()",
         )
         .bind(state_param)
         .fetch_optional(&state.pool)
@@ -2309,7 +2331,9 @@ pub async fn oauth_exchange(
                     state = %state_param,
                     "oauth_exchange: State token not found or expired"
                 );
-                return Err(ApiError::BadRequest("Invalid or expired OAuth state".into()));
+                return Err(ApiError::BadRequest(
+                    "Invalid or expired OAuth state".into(),
+                ));
             }
         }
     } else {
@@ -2351,14 +2375,20 @@ pub async fn oauth_exchange(
     if !status.is_success() {
         tracing::error!("OAuth code exchange failed: {} - {}", status, response_text);
         // Try to extract a user-friendly message from Supabase error
-        let error_msg = if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
+        let error_msg = if let Ok(error_json) =
+            serde_json::from_str::<serde_json::Value>(&response_text)
+        {
             if let Some(msg) = error_json.get("msg").and_then(|v| v.as_str()) {
                 msg.to_string()
             } else if let Some(error_code) = error_json.get("error_code").and_then(|v| v.as_str()) {
                 match error_code {
-                    "bad_code_verifier" => "Invalid authentication state. Please try signing in again.".to_string(),
-                    "invalid_grant" => "Authorization code has expired. Please try signing in again.".to_string(),
-                    _ => format!("Authentication error: {}", error_code)
+                    "bad_code_verifier" => {
+                        "Invalid authentication state. Please try signing in again.".to_string()
+                    }
+                    "invalid_grant" => {
+                        "Authorization code has expired. Please try signing in again.".to_string()
+                    }
+                    _ => format!("Authentication error: {}", error_code),
                 }
             } else {
                 "Authentication failed. Please try again.".to_string()
@@ -2384,8 +2414,8 @@ pub async fn oauth_exchange(
         email: Option<String>,
     }
 
-    let token_response: SupabaseTokenResponse = serde_json::from_str(&response_text)
-        .map_err(|e| {
+    let token_response: SupabaseTokenResponse =
+        serde_json::from_str(&response_text).map_err(|e| {
             tracing::error!("Failed to parse OAuth response: {} - {}", e, response_text);
             ApiError::Internal
         })?;
@@ -2405,7 +2435,8 @@ pub async fn oauth_exchange(
         true,
         Some("oauth".to_string()),
         Some("oauth".to_string()),
-    ).await?;
+    )
+    .await?;
 
     Ok(Json(OAuthExchangeResponse {
         access_token: token_response.access_token,
@@ -2503,12 +2534,11 @@ pub async fn resend_verification_email(
     let (ip_address, user_agent) = extract_auth_audit_context(&headers);
 
     // Always return success to prevent email enumeration
-    let result: Option<(Uuid, bool)> = sqlx::query_as(
-        "SELECT id, email_verified FROM users WHERE email = $1",
-    )
-    .bind(req.email.to_lowercase())
-    .fetch_optional(&state.pool)
-    .await?;
+    let result: Option<(Uuid, bool)> =
+        sqlx::query_as("SELECT id, email_verified FROM users WHERE email = $1")
+            .bind(req.email.to_lowercase())
+            .fetch_optional(&state.pool)
+            .await?;
 
     if let Some((user_id, email_verified)) = result {
         // Don't resend if already verified
@@ -2613,11 +2643,7 @@ pub async fn revoke_session(
     let session = session.ok_or(ApiError::NotFound)?;
 
     // Revoke the session by JTI
-    let revoked = sessions::revoke_session(
-        &state.pool,
-        &session.jti,
-        "user_revoked"
-    ).await?;
+    let revoked = sessions::revoke_session(&state.pool, &session.jti, "user_revoked").await?;
 
     if !revoked {
         return Err(ApiError::NotFound);
@@ -2625,12 +2651,10 @@ pub async fn revoke_session(
 
     // SOC 2 CC6.1: Audit log session revocation
     let (ip_address, user_agent) = extract_auth_audit_context(&headers);
-    let email: Option<String> = sqlx::query_scalar(
-        "SELECT email FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let email: Option<String> = sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await?;
 
     log_auth_event(
         &state.pool,
@@ -2649,7 +2673,8 @@ pub async fn revoke_session(
         true,
         Some(session.jti.clone()),
         Some("session".to_string()),
-    ).await?;
+    )
+    .await?;
 
     tracing::info!(
         user_id = %user_id,
@@ -2670,20 +2695,15 @@ pub async fn logout_all(
 ) -> ApiResult<Json<MessageResponse>> {
     let user_id = auth_user.user_id.ok_or(ApiError::Unauthorized)?;
 
-    let revoked_count = sessions::revoke_all_sessions(
-        &state.pool,
-        user_id,
-        "user_logout_all"
-    ).await?;
+    let revoked_count =
+        sessions::revoke_all_sessions(&state.pool, user_id, "user_logout_all").await?;
 
     // SOC 2 CC6.1: Audit log bulk session revocation
     let (ip_address, user_agent) = extract_auth_audit_context(&headers);
-    let email: Option<String> = sqlx::query_scalar(
-        "SELECT email FROM users WHERE id = $1"
-    )
-    .bind(user_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let email: Option<String> = sqlx::query_scalar("SELECT email FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await?;
 
     log_auth_event(
         &state.pool,
@@ -2701,7 +2721,8 @@ pub async fn logout_all(
         true,
         None,
         Some("session".to_string()),
-    ).await?;
+    )
+    .await?;
 
     tracing::info!(
         user_id = %user_id,
