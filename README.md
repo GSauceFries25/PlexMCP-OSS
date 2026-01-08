@@ -129,7 +129,7 @@ PlexMCP is source-available under the [FSL-1.1-Apache-2.0](LICENSE) license:
 - **Self-host freely** on your own infrastructure
 - **Modify the source** for your needs
 - **Commercial use** permitted
-- **Converts to Apache 2.0** after two years
+- **Converts to Apache 2.0** after five years
 
 See [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) for enterprise licensing.
 
