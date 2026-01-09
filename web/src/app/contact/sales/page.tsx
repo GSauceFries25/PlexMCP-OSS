@@ -273,7 +273,14 @@ export default function ContactSalesPage() {
 
       {/* Privacy Note */}
       <p className="text-xs text-muted-foreground text-center mt-6">
-        By submitting, you agree to our Terms of Service and Privacy Policy.
+        By submitting, you agree to our{" "}
+        <Link href="/terms" className="underline hover:text-primary">
+          Terms of Service
+        </Link>{" "}
+        and{" "}
+        <Link href="/privacy" className="underline hover:text-primary">
+          Privacy Policy
+        </Link>.
       </p>
     </>
   );
